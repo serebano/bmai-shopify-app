@@ -15,13 +15,35 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PLANS } from "../lib/usageBilling";
 import { managedPricingUrl, resolveBillingAccess } from "../lib/billingGate";
+import { subscriptionStateFromInstallation } from "../lib/billingSync";
+import { syncBillingState } from "../lib/billingState.server";
 
 // The app handle from shopify.app.toml (`handle = "busymate-ai"`); the managed
 // pricing page lives at /store/<store>/charges/<handle>/pricing_plans.
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  // Reconcile the LIVE subscription into BillingState so the page (and
+  // resolveBillingAccess) reflect a real plan even without a webhook — this is what
+  // makes accept/decline/reinstall-re-request converge (Req 1.2.2). Non-fatal: on a
+  // query failure we fall back to the stored state and never block the admin page.
+  try {
+    const resp = await admin.graphql(
+      `#graphql
+      query ActiveSubscriptions {
+        currentAppInstallation {
+          activeSubscriptions { id name status }
+        }
+      }`,
+    );
+    const body = (await resp.json()) as { data?: unknown };
+    await syncBillingState(session.shop, subscriptionStateFromInstallation(body.data));
+  } catch (err) {
+    console.warn(
+      `[billing] activeSubscriptions reconcile failed shop=${session.shop}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const billing = await prisma.billingState.findUnique({ where: { shop: session.shop } });
   const access = resolveBillingAccess({
     status: billing?.status,

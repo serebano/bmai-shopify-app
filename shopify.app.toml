@@ -46,6 +46,12 @@ uri = "https://shopify.busymate.ai/webhooks/app/uninstalled"
 topics = [ "app/scopes_update" ]
 uri = "https://shopify.busymate.ai/webhooks/app/scopes_update"
 
+# Billing status sync — accept/decline/cancel/freeze/re-request converge here so
+# resolveBillingAccess() reflects the real subscription (Req 1.2.2).
+[[webhooks.subscriptions]]
+topics = [ "app_subscriptions/update" ]
+uri = "https://shopify.busymate.ai/webhooks/app_subscriptions/update"
+
 # --- KB-freshness webhooks (re-ingest the tenant KB snapshot on change) ---
 [[webhooks.subscriptions]]
 topics = [ "products/create", "products/update", "products/delete" ]
