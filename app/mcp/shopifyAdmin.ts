@@ -1,6 +1,7 @@
 import prisma from "../db.server";
+import { decryptField } from "../lib/fieldCipher";
 
-const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-01";
+const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
 
 export interface ShopifyAdminClient {
   shop: string;
@@ -19,6 +20,9 @@ export async function adminForShop(shop: string): Promise<ShopifyAdminClient> {
   if (!session?.accessToken) {
     throw new Error(`no offline token for ${shop} — reinstall required`);
   }
+  // The token is stored encrypted at rest (app/lib/fieldCipher.ts); decrypt for use.
+  // Legacy plaintext rows pass through unchanged.
+  const accessToken = decryptField(session.accessToken);
   const endpoint = `https://${shop}/admin/api/${API_VERSION}/graphql.json`;
   return {
     shop,
@@ -27,7 +31,7 @@ export async function adminForShop(shop: string): Promise<ShopifyAdminClient> {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-shopify-access-token": session.accessToken,
+          "x-shopify-access-token": accessToken,
         },
         body: JSON.stringify({ query, variables: variables ?? {} }),
       });

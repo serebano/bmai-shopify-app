@@ -20,6 +20,6 @@ export const loader = async () => {
     launchIdentity: launchIdentityConfigured(),
     // the MCP endpoint origin used for actor-token `aud` pinning.
     audience: connectorAudience(),
-    apiVersion: process.env.SHOPIFY_API_VERSION || "2026-01",
+    apiVersion: process.env.SHOPIFY_API_VERSION || "2026-07",
   });
 };

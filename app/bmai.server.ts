@@ -25,6 +25,7 @@ import { connectorEndpoint } from "./lib/connector";
 import { runProvisionLifecycle, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
+import { decryptField, encryptField } from "./lib/fieldCipher";
 
 // Two MCP surfaces, split by the no-mix rule + one shared Supabase OAuth
 // backend (the SAME access token authenticates on both):
@@ -62,13 +63,16 @@ function makeTokenStore(id: string): TokenStore {
   return {
     load: async () => {
       const row = await prisma.bmaiCredential.findUnique({ where: { id } });
-      return row ? { clientId: row.clientId, refreshToken: row.refreshToken } : null;
+      // The rotating refresh token is stored encrypted at rest; decrypt on load
+      // (legacy plaintext rows pass through unchanged).
+      return row ? { clientId: row.clientId, refreshToken: decryptField(row.refreshToken) } : null;
     },
     save: async (v) => {
+      const refreshToken = encryptField(v.refreshToken);
       await prisma.bmaiCredential.upsert({
         where: { id },
-        create: { id, clientId: v.clientId, refreshToken: v.refreshToken },
-        update: { clientId: v.clientId, refreshToken: v.refreshToken },
+        create: { id, clientId: v.clientId, refreshToken },
+        update: { clientId: v.clientId, refreshToken },
       });
     },
   };

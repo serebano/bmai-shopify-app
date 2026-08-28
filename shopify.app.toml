@@ -28,7 +28,7 @@ redirect_urls = [
 ]
 
 [webhooks]
-api_version = "2026-01"
+api_version = "2026-07"
 
 # --- Mandatory GDPR compliance webhooks (the #1 App Store rejection cause) ---
 # Handlers MUST actually satisfy the request (export/redact tenant data;
