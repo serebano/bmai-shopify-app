@@ -21,7 +21,7 @@ don't reach around it. `app/bmai.server.ts` is the ONLY module that talks to Bus
 
 Shopify CLI 3 · **React Router 7** (`@shopify/shopify-app-react-router`, NOT Remix) ·
 Polaris + App Bridge · Prisma + Postgres (the app's OWN DB) · theme app extension ·
-Shopify Billing API · `api_version 2026-01`.
+Shopify Billing API · **`api_version 2026-07`** (Admin GraphQL).
 
 ## Layout
 
@@ -33,8 +33,8 @@ app/routes/app*.tsx         embedded admin UI (Polaris/App Bridge)
 app/routes/webhooks.*.tsx   GDPR compliance (3) + app/uninstalled + scopes_update + KB freshness
 app/routes/mcp.$.tsx        the per-store Shopify Admin MCP connector transport
 app/routes/identity.tsx     App-Proxy-verified logged-in customer → ES256 launch JWT
-app/mcp/**                  connector: transport + auth + Admin GraphQL client + tools (4 tiers)
-app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · usageBilling · ingest
+app/mcp/**                  connector: transport + auth (actor-token verify) + Admin GraphQL client + tools (real, 4 tiers)
+app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · usageBilling · ingest · mgmtArgs · fieldCipher · billingSync
 extensions/storefront-assistant/  theme app-embed block mounting the widget (×14 locales)
 prisma/schema.prisma        Session · ShopTenant · BillingState · LaunchKey
 docs/                       ARCHITECTURE · PROVISIONING · EXTENDING · LISTING
@@ -51,6 +51,21 @@ CHECKLIST.md                Built-for-Shopify compliance status
   no English-only surface.
 - **Confirm-gate every write** connector tool; the highest-risk (refund/return/cancel) are
   `adminOnly` (kept off the free-text LLM path). A refund cap escalates above-cap → human.
+- **Connector tools are REAL** — `app/mcp/tools/*` issue live Admin GraphQL (2026-07):
+  products (search/get/collections), orders scoped to the launch-JWT customer via
+  `orderLookup.ts` (a customer only sees their own orders), and the writes
+  refundCreate/returnCreate/orderCancel/orderUpdate/draftOrderCreate. The connector
+  registers `delegation_mode:'signed_actor_token'` + the delegated tools ONLY when the
+  host can verify the actor token (`BMAI_SUPPORT_ACTOR_MASTER` set == `/api/bmai/status`
+  `actorVerifier`); else it stays read-only `none`.
+- **Encryption at rest** — credential/PII columns (`Session.accessToken` + `email`,
+  `BmaiCredential.refreshToken`) are AES-256-GCM encrypted via `app/lib/fieldCipher.ts`
+  + the `EncryptedSessionStorage` decorator; `APP_ENCRYPTION_KEY` in the host env
+  (unset ⇒ dev no-op). See `docs/DATA-RETENTION.md`.
+- **Mgmt-call shape is shared** — `set_tenant_branding` / `publish_tenant_runtime` args
+  are built ONLY by `app/lib/mgmtArgs.ts` (proof-of-shop + `confirm:true`), so
+  provisioning, the settings save and KB re-ingest can't drift out of the shape the
+  bmai edge verifies.
 - **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"bro"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
 - **Every change ships a test** — `test/**`, `npm test`. Assert the denied/failure path too.

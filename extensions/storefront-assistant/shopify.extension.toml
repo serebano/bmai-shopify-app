@@ -2,7 +2,7 @@
 # as an app-embed block (NO theme.liquid edit; merchant toggles it in the theme
 # editor). Docs: https://shopify.dev/docs/apps/build/online-store/theme-app-extensions
 
-api_version = "2026-01"
+api_version = "2026-07"
 
 [[extensions]]
 type = "theme"

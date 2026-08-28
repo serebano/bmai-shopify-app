@@ -131,9 +131,12 @@ A real install → `provision_partner_tenant` (real tenant) → `set_tenant_bran
 - **Delegated writes (app):** the app-side signed_actor_token verifier is **DONE** — `app/mcp/auth.ts` + `app/mcp/actorToken.ts` HMAC-verify
   Busymate AI's actor token (per-(tenant,connector) secret derived from `BMAI_SUPPORT_ACTOR_MASTER`;
   iss/aud/kid/ttl/claim pins; fail-closed), and `GET /api/bmai/status` reports
-  `actorVerifier`. **Remaining owner/deploy step:** provision `BMAI_SUPPORT_ACTOR_MASTER`
-  (= Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET`) into the app deploy env, then switch the LIVE
-  connector to `delegation_mode:'signed_actor_token'` (see §5b).
+  `actorVerifier`. The connector registration flips to
+  `delegation_mode:'signed_actor_token'` + the delegated write tools **automatically**
+  once the verifier is ready (`app/lib/provision.ts` reads
+  `masterSecretUsable(BMAI_SUPPORT_ACTOR_MASTER)`). **Remaining owner/deploy step:**
+  provision `BMAI_SUPPORT_ACTOR_MASTER` (= Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET`)
+  into the deploy env, then re-provision (Connector → Re-provision) to flip it live.
 - **Merchant admin:** `add_tenant_admin` is NOT called (needs a Busymate AI `user_id` a
   Shopify install lacks); the merchant is linked on first Busymate AI sign-in.
 
@@ -164,6 +167,16 @@ In production leave `BMAI_ALLOW_HEADER_CALLER` **unset** — the legacy unverifi
 `BMAI_CONNECTOR_HMAC_SECRET` (a single static HMAC) is **superseded** by the
 derived-per-connector master and is no longer read by the verifier.
 
+### 5c. Encryption-at-rest key (`APP_ENCRYPTION_KEY`) 🔒
+
+Credential + PII columns (`Session.accessToken` + `email`, `BmaiCredential.refreshToken`)
+are AES-256-GCM encrypted at the app layer (`app/lib/fieldCipher.ts`). Set a 32-byte
+key on the host — `openssl rand -base64 32` — as `APP_ENCRYPTION_KEY`. Value-blind;
+never logged. UNSET ⇒ those columns are stored plaintext (a documented dev/CI no-op);
+SET it in production so the PCD at-rest attestation is true. Legacy plaintext rows
+read fine and upgrade to ciphertext on the next write. Retention windows + the full
+data map: `docs/DATA-RETENTION.md`.
+
 ## 6. Billing plan (Managed Pricing) 🔒
 
 Define the plans in **Partner Dashboard → App pricing → Managed pricing** (match
@@ -173,9 +186,11 @@ Define the plans in **Partner Dashboard → App pricing → Managed pricing** (m
 
 ## 7. Listing assets + translations 🔒
 
-Screenshots + feature banner + icon + demo video (mp4/H.264) + demo-store reviewer
-creds; real translations for the 14 locales (`listing/`, `extensions/**/locales/`).
-Publish the privacy policy at `busymate.ai/legal/privacy`.
+Done in-repo: the **icon** (`listing/assets/icon-1200.png`), the **14-locale**
+listing translations (`listing/*.json`), and factual-accuracy copy. Still owner-gated:
+screenshots + feature banner + demo video (mp4/H.264) + demo-store reviewer creds, and
+**publishing** the drafted privacy policy + FAQ (`docs/legal/*.md`) at
+`busymate.ai/legal/privacy` + `busymate.ai/shopify/faq` (currently 404 — needs v2 access).
 
 ## 8. (Optional) List it in the Busymate AI directory
 
@@ -191,7 +206,7 @@ integrations. Do this only after the App Store listing URL exists.
 npm install && npx prisma generate
 npm run typecheck   # 0 errors
 npm run lint        # 0 errors
-npm test            # 84 passing (12 files)
+npm test            # 133 passing (17 files)
 npm run build       # clean SSR build
 ```
 
@@ -207,6 +222,7 @@ npm run build       # clean SSR build
 | `BMAI_SUPPORT_ACTOR_MASTER` | = Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET` (≥32 B) | app secret store / host env |
 | `BMAI_CONNECTOR_HMAC_SECRET` | *(deprecated — superseded by the master above)* | — |
 | `LAUNCH_SIGNING_KEY` | ES256 PKCS#8 PEM | app secret store |
+| `APP_ENCRYPTION_KEY` | `openssl rand -base64 32` (32-byte at-rest key) | host env / app secret store |
 | `SHOPIFY_APP_HANDLE` | shopify.app.toml handle | env (default `busymate-ai`) |
 
 Nothing above can be produced from a code session — each needs the Partner Dashboard,

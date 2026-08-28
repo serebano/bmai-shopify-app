@@ -4,17 +4,22 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 (shape wired, real impl TODO) · **[ ]** TODO · **🔒** owner-gated.
 
 > This app is **verified-buildable + unit-tested** (`npm run typecheck | lint |
-> test | build` all green — 84 tests / 12 files) but **NOT submittable yet**: the
-> remaining blockers are all owner-gated (Partner app, provisioning credential,
-> host, keys, listing). The exact owner steps are in **`SETUP.md`**.
+> test | build` all green — 133 tests / 17 files) with the **Phase-1 code gaps
+> closed** (real connector tools · delegation flip · billing sync + metering ·
+> at-rest encryption · settings/re-ingest proof shape · API 2026-07 · honest
+> listing copy + 14 locales · icon · privacy/FAQ drafts). The remaining blockers
+> are all **owner-gated** (Partner app registration, pricing plans, PCD submit,
+> demo store, publishing the privacy page). The exact owner steps are in **`SETUP.md`**.
 
 ## Build & tests (provable now, no owner creds)
 
 - [x] `npm run typecheck` clean (unified `@shopify/shopify-api` via overrides)
 - [x] `npm run lint` clean (typescript-eslint parser wired into the flat config)
-- [x] `npm test` — 84 passing: provisioning seam · proof-of-shop + bmai OAuth token ·
-  GDPR dispatch · billing gate · App-Proxy HMAC · connector transport/gates ·
-  **actor-token verify (interop) · /api/bmai/status** · tenant slug · naming
+- [x] `npm test` — 133 passing: provisioning seam + delegation flip · proof-of-shop +
+  bmai OAuth token · **real connector tools (Admin GraphQL, no TODO stubs)** · GDPR
+  dispatch · billing gate + **subscription sync** + **usage metering (cap-clamped)** ·
+  **field cipher (at-rest)** · **mgmt call-shape** · App-Proxy HMAC · connector
+  transport/gates · actor-token verify (interop) · /api/bmai/status · tenant slug · naming
 - [x] `npm run build` — clean React Router 7 SSR build
 - [x] `package-lock.json` committed (CI `npm ci` works)
 
@@ -28,9 +33,13 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
   `app/mcp/auth.ts` HMAC-verify Busymate AI's HS256 actor token (per-(tenant,connector)
   secret derived from a shared master; iss/aud/kid/ttl/claim pins; fail-closed).
   Interop-tested against an independent reproduction of Busymate AI's signer. `/api/bmai/status`
-  probes readiness. **Remaining owner/deploy step:** flip the LIVE connector
-  `delegation_mode` + provision `BMAI_SUPPORT_ACTOR_MASTER` (= Busymate AI's
-  `V2_SUPPORT_ACTOR_TOKEN_SECRET`) into the app's deploy env (done elsewhere).
+  probes readiness.
+- [x] **Connector delegation flip is automatic in-code** — provisioning registers
+  `delegation_mode:'signed_actor_token'` + the delegated write tools ONLY when the host
+  can verify the actor token (`masterSecretUsable(BMAI_SUPPORT_ACTOR_MASTER)`), else it
+  stays read-only `none` (no green-while-dead). **Remaining owner/deploy step:** provision
+  `BMAI_SUPPORT_ACTOR_MASTER` (= Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET`) into the
+  deploy env; the next re-provision flips it live.
 
 ## Mandatory GDPR compliance webhooks (the #1 rejection cause)
 
@@ -48,14 +57,16 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 - [x] `app/uninstalled` → suspend tenant + purge sessions — `webhooks.app.uninstalled.tsx`
 - [x] `app/scopes_update` handled — `webhooks.app.scopes_update.tsx`
+- [x] `app_subscriptions/update` → BillingState sync — `webhooks.app_subscriptions.update.tsx`
 - [x] Product/order KB-freshness webhooks — `webhooks.kb.*.tsx`
 
 ## API version & scopes
 
-- [x] `api_version = "2026-01"` pinned (toml + admin client)
+- [x] `api_version = "2026-07"` pinned (toml + admin client + `/api/bmai/status`)
 - [x] Least-privilege scopes declared (`read_products,read_content,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`)
+- [x] Mutation/scope names verified vs 2026-07: refunds `write_orders`/`refundCreate`,
+  returns `write_returns`/`returnCreate`, `orderCancel`/`orderUpdate`, `appUsageRecordCreate`
 - [ ] 🔒 `read_all_orders` (>60-day orders) — needs Shopify approval; request at review
-- [ ] Verify exact scope names per action against 2026-01 (refunds `write_orders`/`refundCreate`; `write_returns` availability)
 
 ## Billing
 
@@ -63,7 +74,12 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
   redirect** wired (`app/lib/billingGate.ts` → `app.billing.tsx`); unit-tested
 - [x] Usage charges **capped**; **widget never disabled at cap** — hard invariant
   `widgetEnabled() === true`, asserted by `test/billingGate.test.ts`
-- [~] Usage-record metering (`AppUsageRecord` create) — seam in `usageBilling.ts` (P3)
+- [x] **Subscription status sync** — `app_subscriptions/update` webhook + the billing
+  loader reconcile `currentAppInstallation.activeSubscriptions` → BillingState
+  (`billingSync.ts` + `billingState.server.ts`; `test/billingSync.test.ts`)
+- [x] **Usage-record metering** — `meterShop()` creates a cap-clamped `AppUsageRecord`
+  (`appUsageRecordCreate`) respecting `cappedAmountCents` (`test/usageBilling.test.ts`).
+  Its trigger (host cron / bmai resolution signal) is the remaining external wiring.
 - [ ] 🔒 Define the Managed Pricing plans in Partners + guarantee accounting decision
 
 ## Storefront & performance
@@ -77,13 +93,19 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 - [x] Dedicated app DB (independent failure domain; not the bmai control plane)
 - [x] All control-plane ops via MCP (no backdoor DB writes) — `bmai.server.ts`
-- [ ] 🔒 Privacy policy + data-handling disclosures published (`busymate.ai/legal/*`)
+- [x] **Encryption at rest** for credential/PII columns (AES-256-GCM,
+  `app/lib/fieldCipher.ts` + `EncryptedSessionStorage`) — makes the PCD attestation
+  TRUE; retention windows in `docs/DATA-RETENTION.md`
+- [x] Privacy policy + FAQ **drafted** (`docs/legal/privacy.md` + `faq.md`, app-specific)
+- [ ] 🔒 Publish the privacy policy + FAQ at `busymate.ai/legal/privacy` + `busymate.ai/shopify/faq` (currently 404)
 
 ## Listing
 
-- [x] Localized-ready listing structure (`listing/en.json` + README) — ×14 plan
-- [ ] 🔒 Translations for the 14 locales (real, not English stubs)
-- [ ] 🔒 Screenshots, feature banner, icon, demo video (mp4/H.264), demo store + reviewer creds
+- [x] Localized listing — `listing/en.json` + all **14** Tier-1 locales with real translations
+- [x] **Factual-accuracy copy** (Req 4.3.3): no guarantees/superlatives/competitor-flaw
+  positioning; grounding = "grounded, source-cited, refuses when unsure"
+- [x] App **icon** (1200×1200, `listing/assets/icon-1200.png`)
+- [ ] 🔒 Screenshots, feature banner, demo video (mp4/H.264), demo store + reviewer creds
 - [ ] **(Optional) List in the Busymate AI directory** over MCP, once the App Store
   listing exists and is approved. See `docs/LISTING.md`.
 
@@ -100,12 +122,13 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 ## Next phases (NEVER PARK — each has an active lane)
 
-- **P2** — real Admin-API tool impls · provisioning wired to bmai MCP · identity/JWKS
-  live · publish `@busymate/whitelabel-sdk` · exit: store installs, widget appears,
-  Busymate AI answers grounded FAQ/policy + WISMO reads.
-- **P3** — write connector tools (delegated+confirm+cap) · identified launch to the
-  Shopify customer · resolution meter + Shopify Billing · pre-launch simulation ·
-  guarantee + estimator · GDPR handlers proven · **App Store submission** · store
-  listing published as app #1.
+- **P2 — CODE DONE** — real Admin-API tool impls ✅ · provisioning wired to bmai MCP ✅
+  · identity/JWKS ✅. Remaining: publish `@busymate/whitelabel-sdk`; live exit-check
+  (store installs, widget appears, grounded FAQ/policy + WISMO reads) needs the
+  owner-gated Partner app + host.
+- **P3 — CODE DONE** — write connector tools (delegated+confirm+cap) ✅ · subscription
+  sync + usage metering ✅ · at-rest encryption ✅. Remaining owner steps: pricing
+  plans in Partners, PCD submit, demo store + reviewer creds, publish the privacy
+  page, then **App Store submission**.
 - **P4+** — trust engine · autonomous depth · onboarding · omnichannel · analytics/ROI
   · enterprise.

@@ -11,16 +11,20 @@ is the single integration seam. Idempotent: safe to re-run on every re-auth.
    - The store becomes an `is_platform=false` tenant. `slug` = `shopToSlug(shop)`
      (`app/lib/tenantSlug.ts`), giving the serving host `<slug>.busymate.ai` off the
      platform apex cert — **no per-store DNS/cert**.
-3. **Branding** — `set_tenant_branding` (shop name/logo/theme colors; refined in
-   `app/routes/app.settings.tsx`).
-4. **Serving host + embed origins** — `set_tenant_domain(slug)` +
-   `add_tenant_embed_origin([ https://<shop>.myshopify.com, custom domain ])`. The
-   storefront origins go into the tenant's **published embed-origin allowlist**
-   (checked by `embed/v1.js`), NOT `tenant_domains`.
-5. **Merchant admin** — `add_tenant_admin(email)`.
-6. **Register the Shopify Admin connector** — `upsert_tenant_support_connector`
-   with `endpoint = https://shopify.busymate.ai/mcp`, `mode = signed_actor_token`,
-   and the four-tier `mcp_connector_support_policies`.
+3. **Branding** — `set_tenant_branding` (proof-of-shop + `branding:{…}` + confirm;
+   built by `app/lib/mgmtArgs.ts`, refined in `app/routes/app.settings.tsx`).
+4. **Embed origins** — `add_tenant_embed_origin([ https://<shop>.myshopify.com,
+   custom domain ])` (proof path). The tenant serves at the derived slug lane
+   `<slug>.busymate.ai` (no operator-only `set_tenant_domain`); the storefront origins
+   go into the tenant's **published embed-origin allowlist** (checked by `embed/v1.js`),
+   NOT `tenant_domains`.
+5. **Merchant admin** — NOT called at install: `add_tenant_admin` needs a bmai
+   `user_id` a Shopify install lacks; the merchant is linked on first bmai sign-in.
+6. **Register the Shopify Admin connector** — `upsert_tenant_support_connector` with
+   `endpoint = https://shopify.busymate.ai/mcp`, `auth_mode:'none'`, and
+   `delegation_mode:'signed_actor_token'` + the delegated write tools when the actor
+   verifier is ready (`BMAI_SUPPORT_ACTOR_MASTER` set), else read-only `none`; the
+   four-tier `mcp_connector_support_policies`.
 7. **Auto-train** — `app/lib/ingest.ts` builds the KB snapshot (products + policies
    + pages).
 8. **Publish** — `publish_tenant_runtime` (draft → preflight → publish, server-side).

@@ -83,4 +83,4 @@ dedicated Postgres and run `prisma migrate deploy` on release.
 Remix merged into React Router v7; the official NEW-app template is
 `Shopify/shopify-app-template-react-router` and `@shopify/shopify-app-react-router`
 is the maintained package (`@shopify/shopify-app-remix` is maintenance-only). Admin API
-+ webhooks are pinned to `api_version 2026-01`.
++ webhooks are pinned to `api_version 2026-07`.

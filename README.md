@@ -105,7 +105,7 @@ Canonical Busymate AI docs live at **[busymate.ai/docs](https://busymate.ai/docs
 Shopify CLI 3 · **React Router 7** (`@shopify/shopify-app-react-router` — Remix merged
 into RR7; the Remix package is maintenance-only) · Polaris + App Bridge · Prisma +
 Postgres (the app's **own** DB — an independent failure domain, never the Busymate AI
-control plane) · theme app extension · Shopify Billing API · `api_version 2026-01`.
+control plane) · theme app extension · Shopify Billing API · `api_version 2026-07`.
 
 ## Quickstart (run it locally)
 
