@@ -71,6 +71,16 @@ export interface ProvisionDeps {
    * configured (fail-closed). Live deps use `buildPartnerProof`; tests stub it.
    */
   signProof: (partner: string, shop: string) => PartnerProof | null;
+  /**
+   * Is this host READY to verify Busymate AI's signed actor tokens? True iff
+   * `BMAI_SUPPORT_ACTOR_MASTER` is a usable ≥32-byte secret (== what
+   * `/api/bmai/status` reports as `actorVerifier`). When true the connector
+   * registers with `delegation_mode:'signed_actor_token'` + the DELEGATED write
+   * tools; when false it stays READ-ONLY (`none`) — the bmai control plane refuses
+   * `signed_actor_token` until the app can honestly verify the HMAC, so flipping it
+   * before the master is provisioned would be green-while-dead.
+   */
+  delegationReady: boolean;
 }
 
 export interface ProvisionOutcome {
@@ -168,13 +178,16 @@ export async function runProvisionLifecycle(
   // provisioner never satisfies); the merchant is linked on first bmai sign-in.
 
   // 5) Register the per-store Shopify Admin connector (signed_actor_token + 4 tiers).
-  // Unauthenticated server access; delegation_mode:'none' → the connector registers
-  // with the READ tiers (public + identified) only. The DELEGATED write tools
-  // (refunds/returns/…) require the app's signed_actor_token verifier — the bmai
-  // control plane refuses signed_actor_token until the partner /api/bmai/status
-  // endpoint reports actorVerifier:true, which is only honest once app/mcp/auth.ts
-  // actually verifies the actor HMAC (a P2 TODO). Until then this stays
-  // 'none' (no green-while-dead claim).
+  // Unauthenticated server access (`auth_mode:'none'`); the per-user delegation mode
+  // is gated on the app's actor-token verifier being READY (deps.delegationReady ==
+  // /api/bmai/status actorVerifier). READY → `signed_actor_token` + the DELEGATED
+  // write tools (refunds/returns/cancel/address/discount/draft), each still
+  // confirm-gated + actor-scoped. NOT READY → READ-ONLY (`none`, public+identified
+  // only): the bmai control plane refuses `signed_actor_token` until the host can
+  // honestly verify the HMAC, so we never make a claim we can't back (no
+  // green-while-dead). The step is idempotent — provisioning the master and
+  // re-running Connector → Re-provision flips it live.
+  const delegationMode = deps.delegationReady ? "signed_actor_token" : "none";
   const connector = await soft<{ id?: string; connector?: { id?: string } }>("upsert_tenant_support_connector", {
     ...proofArgs(proof),
     tenant_id: tenantId,
@@ -182,8 +195,8 @@ export async function runProvisionLifecycle(
     namespace: "shopify-admin",
     title: "Shopify Admin",
     auth_mode: "none",
-    delegation_mode: "none",
-    tool_access: connectorToolAccess(),
+    delegation_mode: delegationMode,
+    tool_access: connectorToolAccess(deps.delegationReady),
     confirm: true,
   });
   // The tool returns { ok, id, connector: { id } } — capture the connector's id.
@@ -219,14 +232,18 @@ export async function runProvisionLifecycle(
 }
 
 /**
- * Per-tool access classification for upsert_tenant_support_connector — the READ
- * tiers only (public + identified). The delegated WRITE tier is intentionally
- * omitted until the app's signed_actor_token verifier ships (see the connector
- * registration above); registering a delegated tool without it would be refused.
+ * Per-tool access classification for upsert_tenant_support_connector. The READ
+ * tiers (public + identified) always register. The DELEGATED write tier registers
+ * only when `includeDelegated` (the actor-token verifier is ready) — the bmai
+ * control plane refuses a delegated tool_access entry unless the host can verify
+ * the signed actor token, so this is gated in lockstep with `delegation_mode`.
  */
-export function connectorToolAccess(): Record<string, "public" | "identified" | "delegated"> {
+export function connectorToolAccess(
+  includeDelegated = false,
+): Record<string, "public" | "identified" | "delegated"> {
   const out: Record<string, "public" | "identified" | "delegated"> = {};
   for (const t of CONNECTOR_POLICIES.public_tools) out[t] = "public";
   for (const t of CONNECTOR_POLICIES.identified_tools) out[t] = "identified";
+  if (includeDelegated) for (const t of CONNECTOR_POLICIES.delegated_tools) out[t] = "delegated";
   return out;
 }

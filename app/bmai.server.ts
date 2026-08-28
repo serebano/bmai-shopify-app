@@ -26,6 +26,7 @@ import { runProvisionLifecycle, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
+import { masterSecretUsable } from "./mcp/actorToken";
 
 // Two MCP surfaces, split by the no-mix rule + one shared Supabase OAuth
 // backend (the SAME access token authenticates on both):
@@ -205,6 +206,9 @@ function liveProvisionDeps(): ProvisionDeps {
     connectorEndpoint,
     embedOrigin: EMBED_ORIGIN,
     signProof: (partner, shop) => buildPartnerProof(partner, shop),
+    // Register delegated writes only once this host can verify Busymate AI's actor
+    // tokens (BMAI_SUPPORT_ACTOR_MASTER present) — mirrors /api/bmai/status.
+    delegationReady: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),
   };
 }
 

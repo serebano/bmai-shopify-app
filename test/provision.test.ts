@@ -17,7 +17,7 @@ const STUB_PROOF: PartnerProof = { partner: "shopify", shop: "acme.myshopify.com
 
 function makeDeps(
   call: ProvisionDeps["call"],
-  opts: { proof?: PartnerProof | null } = {},
+  opts: { proof?: PartnerProof | null; delegationReady?: boolean } = {},
 ): { deps: ProvisionDeps; states: TenantPatch[] } {
   const states: TenantPatch[] = [];
   const deps: ProvisionDeps = {
@@ -29,6 +29,7 @@ function makeDeps(
     connectorEndpoint: () => "https://shopify.busymate.ai/mcp",
     embedOrigin: "https://busymate.ai",
     signProof: () => (opts.proof === undefined ? STUB_PROOF : opts.proof),
+    delegationReady: opts.delegationReady ?? false,
   };
   return { deps, states };
 }
@@ -118,6 +119,32 @@ describe("tenant provisioning lifecycle (seam)", () => {
     // Delegated WRITE tools are NOT registered yet (would be refused w/o verifier).
     expect(args.tool_access.create_refund).toBeUndefined();
     expect(args.tool_access.start_return).toBeUndefined();
+  });
+
+  it("flips to signed_actor_token + registers the delegated writes when the verifier is ready", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"], { delegationReady: true });
+    await runProvisionLifecycle(session, deps);
+
+    const connectorCall = call.mock.calls.find((c) => c[0] === "upsert_tenant_support_connector");
+    const args = connectorCall![1] as unknown as {
+      auth_mode: string;
+      delegation_mode: string;
+      tool_access: Record<string, string>;
+    };
+    // Actor verifier ready → per-user delegation via the signed actor token.
+    expect(args.auth_mode).toBe("none");
+    expect(args.delegation_mode).toBe("signed_actor_token");
+    // Read tiers still present…
+    expect(args.tool_access.search_products).toBe("public");
+    expect(args.tool_access.get_order_status).toBe("identified");
+    // …and EVERY delegated write tool is now registered as delegated.
+    for (const t of CONNECTOR_POLICIES.delegated_tools) {
+      expect(args.tool_access[t]).toBe("delegated");
+    }
   });
 
   it("never calls add_tenant_admin (a Shopify install has no bmai user_id)", async () => {

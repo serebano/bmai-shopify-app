@@ -14,6 +14,7 @@
 import { callMcpTool } from "../app/bmai.server";
 import { runProvisionLifecycle, type ProvisionDeps } from "../app/lib/provision";
 import { buildPartnerProof, proofArgs } from "../app/lib/partnerProof";
+import { masterSecretUsable } from "../app/mcp/actorToken";
 
 const shop = process.env.TEST_SHOP || `bmai-verify-${Date.now().toString(36)}.myshopify.com`;
 const action = process.env.ACTION || "provision";
@@ -26,6 +27,7 @@ async function provision() {
     connectorEndpoint: () => `${process.env.SHOPIFY_APP_URL || "https://shopify.busymate.ai"}/mcp`,
     embedOrigin: process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai",
     signProof: (partner, s) => buildPartnerProof(partner, s),
+    delegationReady: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),
   };
   const out = await runProvisionLifecycle({ shop, email: "verify@bmai.test" }, deps);
   console.log(JSON.stringify({ step: "provision", shop, ...out }, null, 2));
