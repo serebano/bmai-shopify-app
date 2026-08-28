@@ -1,0 +1,43 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#12161C"/>
+      <stop offset="1" stop-color="#0B0E12"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="330" y1="300" x2="900" y2="860" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#54E8A6"/>
+      <stop offset="1" stop-color="#3ECF8E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background (Shopify applies its own corner mask) -->
+  <rect width="1200" height="1200" fill="url(#bg)"/>
+
+  <!-- Speech bubble (rounded) with a tail = support chat -->
+  <path d="M355 250
+           h490
+           a150 150 0 0 1 150 150
+           v300
+           a150 150 0 0 1 -150 150
+           h-300
+           l-165 150
+           v-150
+           h-25
+           a150 150 0 0 1 -150 -150
+           v-300
+           a150 150 0 0 1 150 -150 z"
+        fill="url(#bubble)"/>
+
+  <!-- "bro" three-dot mark inside the bubble -->
+  <circle cx="470" cy="550" r="46" fill="#0B0E12"/>
+  <circle cx="600" cy="550" r="46" fill="#0B0E12"/>
+  <circle cx="730" cy="550" r="46" fill="#0B0E12"/>
+
+  <!-- AI spark (four-point) top-right, signalling the assistant -->
+  <path d="M905 250
+           c 18 70 40 92 110 110
+           c -70 18 -92 40 -110 110
+           c -18 -70 -40 -92 -110 -110
+           c 70 -18 92 -40 110 -110 z"
+        fill="#EAFBF2"/>
+</svg>
