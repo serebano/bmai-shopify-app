@@ -14,7 +14,7 @@ the demo video are owner-provided assets (capture on the best fleet iPhone/deskt
 | Field | Notes |
 |---|---|
 | `app_name` | "Busymate AI" (brand constant; tagline localizes) |
-| `tagline` | ≤ 62 chars — "The Shopify AI agent that actually resolves" |
+| `tagline` | ≤ 62 chars — "Grounded, order-aware AI support for your store" (no guarantees / superlatives) |
 | `intro` | ≤ 100 chars |
 | `details` | Long description — trust / multilang / access wedges |
 | `feature_bullets` | The 7 MVP features |

@@ -1,0 +1,19 @@
+{
+  "_locale": "es",
+  "app_name": "Busymate AI",
+  "tagline": "Soporte con IA para tu tienda, con contexto de pedidos",
+  "intro": "Soporte fundamentado y con fuentes citadas que realiza acciones reales sobre pedidos — en 14 idiomas.",
+  "details": "Busymate AI añade un agente de soporte con IA a tu tienda. Responde solo a partir de tus propios productos y políticas —fundamentado, con fuentes citadas y reconociendo cuando no está seguro— y gestiona el estado de los pedidos, además de devoluciones, reembolsos y cancelaciones con tu confirmación y un límite de gasto. Habla 14 idiomas con detección automática y RTL, y deriva a tu equipo cuando la confianza es baja. Solo pagas por las conversaciones que resuelve: con tope, y el asistente sigue funcionando aunque se alcance el límite.",
+  "feature_bullets": [
+    "Instalación en 1 clic + entrenamiento automático con tu catálogo y políticas",
+    "Con contexto de pedidos: sigue, edita, cancela y reembolsa — con confirmación",
+    "Responde solo desde tu tienda, con fuentes: fundamentado, citado y reconoce cuando no está seguro",
+    "Derivación a un humano según la confianza, con retorno limpio",
+    "Simulación previa al lanzamiento con tus conversaciones anteriores",
+    "Precios transparentes por resolución",
+    "14 idiomas, detectados automáticamente, listos para RTL"
+  ],
+  "pricing_summary": "Paga por conversación resuelta. Fija un límite de gasto mensual; el asistente sigue funcionando aunque se supere.",
+  "privacy_url": "https://busymate.ai/legal/privacy",
+  "faq_url": "https://busymate.ai/shopify/faq"
+}

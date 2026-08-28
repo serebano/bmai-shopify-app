@@ -1,0 +1,19 @@
+{
+  "_locale": "ro",
+  "app_name": "Busymate AI",
+  "tagline": "Asistență AI pentru magazinul tău, cu context de comenzi",
+  "intro": "Asistență fundamentată și cu surse citate, care efectuează acțiuni reale asupra comenzilor — în 14 limbi.",
+  "details": "Busymate AI adaugă un agent de asistență AI în magazinul tău. Răspunde doar pe baza propriilor tale produse și politici — fundamentat, cu surse citate și recunoscând când nu este sigur — și se ocupă de starea comenzilor, precum și de retururi, rambursări și anulări cu confirmarea ta și o limită de cheltuieli. Vorbește 14 limbi cu detectare automată și suport RTL și predă echipei tale când încrederea este scăzută. Plătești doar pentru conversațiile pe care le rezolvă — cu plafon, iar asistentul continuă să funcționeze și după atingerea limitei.",
+  "feature_bullets": [
+    "Instalare într-un clic + antrenare automată pe catalogul și politicile tale",
+    "Cu context de comenzi: urmărește, editează, anulează, rambursează — cu confirmare",
+    "Răspunde doar din magazinul tău, cu surse: fundamentat, citat și recunoaște când nu este sigur",
+    "Predare către un om în funcție de încredere, cu preluare curată înapoi",
+    "Simulare înainte de lansare pe conversațiile tale anterioare",
+    "Prețuri transparente per rezolvare",
+    "14 limbi, detectate automat, pregătite pentru RTL"
+  ],
+  "pricing_summary": "Plătești per conversație rezolvată. Setează o limită lunară de cheltuieli; asistentul continuă să funcționeze și peste limită.",
+  "privacy_url": "https://busymate.ai/legal/privacy",
+  "faq_url": "https://busymate.ai/shopify/faq"
+}

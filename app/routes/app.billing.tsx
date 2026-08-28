@@ -90,7 +90,7 @@ export default function BillingPage() {
                 Pay per resolution — capped, never disabled at cap
               </Text>
               <Text as="p" tone="subdued">
-                You are billed only for conversations bro actually resolves. Your
+                You are billed only for conversations bro resolves. Your
                 spend cap is a ceiling on charges, not a kill switch — the widget
                 keeps working past the cap. Status: {data.status}.
               </Text>
