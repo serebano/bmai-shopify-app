@@ -27,6 +27,7 @@ import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
+import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
 
 // Two MCP surfaces, split by the no-mix rule + one shared Supabase OAuth
 // backend (the SAME access token authenticates on both):
@@ -225,6 +226,33 @@ export async function onAppInstalled(session: Session): Promise<void> {
     { shop: session.shop, email, accessToken: session.accessToken },
     liveProvisionDeps(),
   );
+}
+
+/**
+ * set_tenant_branding via MCP — the proof-signed `branding:{…}` + confirm shape
+ * (identical to the provisioning lifecycle). Used by the settings save. A missing
+ * tenant is a fail-closed error, never a silent no-op.
+ */
+export async function setTenantBranding(
+  shop: string,
+  tenantId: string | null | undefined,
+  branding: Branding,
+): Promise<McpResult> {
+  if (!tenantId) return { ok: false, error: "no provisioned tenant for this shop yet" };
+  return callMcpTool("set_tenant_branding", brandingArgs(shopProof(shop), tenantId, branding));
+}
+
+/**
+ * publish_tenant_runtime via MCP — the proof-signed + confirm shape. Used by the KB
+ * re-ingest path (passes the fresh kb_snapshot). Fail-closed on a missing tenant.
+ */
+export async function publishTenantRuntime(
+  shop: string,
+  tenantId: string | null | undefined,
+  opts: PublishOptions,
+): Promise<McpResult> {
+  if (!tenantId) return { ok: false, error: "no provisioned tenant for this shop yet" };
+  return callMcpTool("publish_tenant_runtime", publishArgs(shopProof(shop), tenantId, opts));
 }
 
 /** app/uninstalled → suspend/teardown the tenant (never hard-delete on uninstall). */

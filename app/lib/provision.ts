@@ -27,6 +27,7 @@
  */
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
+import { brandingArgs, publishArgs } from "./mgmtArgs";
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -164,7 +165,7 @@ export async function runProvisionLifecycle(
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
   //    provisioner needs NO platform-operator role; #1982 security follow-up #5).
-  await soft("set_tenant_branding", { ...proofArgs(proof), tenant_id: tenantId, branding: { productName: shop, assistantName: "bro" }, confirm: true });
+  await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: "bro" }));
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).
   await soft("add_tenant_embed_origin", { ...proofArgs(proof), origins: storefrontOrigins, confirm: true });
@@ -203,13 +204,10 @@ export async function runProvisionLifecycle(
   const connectorId = connector.data?.id ?? connector.data?.connector?.id ?? null;
 
   // 6) Publish the runtime — LOAD-BEARING (the step that makes the widget resolve).
-  const published = await call("publish_tenant_runtime", {
-    ...proofArgs(proof),
-    tenant_id: tenantId,
-    launch_origins: [servingHost(slug)],
-    embed_origins: storefrontOrigins,
-    confirm: true,
-  });
+  const published = await call(
+    "publish_tenant_runtime",
+    publishArgs(proof, tenantId, { launchOrigins: [servingHost(slug)], embedOrigins: storefrontOrigins }),
+  );
   if (!published.ok) {
     await deps.saveTenant(shop, {
       bmaiTenantId: tenantId,

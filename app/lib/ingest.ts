@@ -1,5 +1,5 @@
 import { adminForShop } from "../mcp/shopifyAdmin";
-import { callMcpTool } from "../bmai.server";
+import { publishTenantRuntime } from "../bmai.server";
 import prisma from "../db.server";
 
 /**
@@ -57,11 +57,10 @@ export async function buildKbSnapshot(shop: string): Promise<KbSnapshot> {
 export async function scheduleReingest(shop: string, _reason: "products" | "orders"): Promise<void> {
   const tenant = await prisma.shopTenant.findUnique({ where: { shop } });
   if (!tenant?.bmaiTenantId) return; // not provisioned yet
-  // TODO(P2): debounce + move to a durable job. For now, best-effort inline.
+  // Debounce + a durable job are a follow-up; for now, best-effort inline. Routed
+  // through the SAME proof-signed + confirm publish shape the lifecycle uses (a
+  // proofless call was silently refused — the B13 bug this fixes).
   const snapshot = await buildKbSnapshot(shop).catch(() => null);
   if (!snapshot) return;
-  await callMcpTool("publish_tenant_runtime", {
-    tenant_id: tenant.bmaiTenantId,
-    kb_snapshot: snapshot,
-  });
+  await publishTenantRuntime(shop, tenant.bmaiTenantId, { kbSnapshot: snapshot });
 }

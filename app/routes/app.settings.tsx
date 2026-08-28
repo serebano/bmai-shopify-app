@@ -13,7 +13,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { callMcpTool } from "../bmai.server";
+import { setTenantBranding } from "../bmai.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -29,12 +29,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-  // set_tenant_branding via MCP (no backdoor). Owner-gated until the provision
-  // credential is set; the result is surfaced honestly rather than assumed.
-  const res = await callMcpTool("set_tenant_branding", {
-    tenant_id: tenant?.bmaiTenantId,
-    display_name: String(form.get("displayName") ?? ""),
-    assistant_name: String(form.get("assistantName") ?? ""),
+  // set_tenant_branding via MCP (no backdoor), routed through the SAME proof-signed
+  // `branding:{…}` + confirm shape the provisioning lifecycle uses — a proofless /
+  // wrong-shape call is silently refused by the bmai edge (the B13 bug this fixes).
+  const res = await setTenantBranding(session.shop, tenant?.bmaiTenantId, {
+    productName: String(form.get("displayName") ?? ""),
+    assistantName: String(form.get("assistantName") ?? ""),
   });
   return { ok: res.ok, error: res.error ?? null };
 };
