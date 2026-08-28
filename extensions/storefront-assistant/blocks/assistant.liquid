@@ -5,10 +5,19 @@
   the merchant enables it in Theme editor → App embeds.
 {%- endcomment -%}
 
+{%- comment -%}
+  Derive the fallback slug SEPARATELY so the append/split only builds the default —
+  a merchant-set assistant_slug is used verbatim (the old inline chain corrupted a
+  set value by appending the domain to it and then splitting on '.').
+{%- endcomment -%}
+{%- assign asst_shop_handle = shop.permanent_domain | split: '.' | first -%}
+{%- assign asst_default_slug = 'shop-' | append: asst_shop_handle -%}
+{%- assign asst_slug = block.settings.assistant_slug | default: asst_default_slug -%}
+
 <script
   src="{{ 'assistant.js' | asset_url }}"
   data-shop="{{ shop.permanent_domain }}"
-  data-slug="{{ block.settings.assistant_slug | default: 'shop-' | append: shop.permanent_domain | split: '.' | first }}"
+  data-slug="{{ asst_slug }}"
   data-origin="{{ block.settings.origin | default: 'https://busymate.ai' }}"
   data-label="{{ block.settings.launcher_label | default: 'Ask us' }}"
   data-logged-in="{% if customer %}true{% else %}false{% endif %}"
