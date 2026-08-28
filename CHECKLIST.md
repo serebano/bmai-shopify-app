@@ -11,6 +11,21 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 > are all **owner-gated** (Partner app registration, pricing plans, PCD submit,
 > demo store, publishing the privacy page). The exact owner steps are in **`SETUP.md`**.
 
+## Deployment state (Phase-1)
+
+- **App host** `shopify.busymate.ai` (busymate-v2-lon1, systemd `bmai-shopify-app`,
+  :3970) redeployed on the Phase-1 code. Live `/api/bmai/status` →
+  `{ok:true, actorVerifier:true, launchIdentity:true, apiVersion:"2026-07"}`;
+  MCP `tools/list` serves 12 tools; `tools/call` fails closed. Env updated:
+  `SHOPIFY_API_VERSION=2026-07`, `APP_ENCRYPTION_KEY` set (mirrored to vault as
+  `SHOPIFY_APP_ENCRYPTION_KEY`) so at-rest encryption is ACTIVE; `BMAI_SUPPORT_ACTOR_MASTER`
+  present → the connector flips to `signed_actor_token` on the next provision.
+- **Shopify Partner app** — `shopify app deploy` created version **`busymate-ai-3`**
+  (`--no-release`, org "SERGIU TODERASCU, AI"): the 2026-07 config + `app_subscriptions/update`
+  webhook + theme extension reached the app. Owner step: `shopify app release --version=busymate-ai-3`
+  when submitting. (Deploy uploads are geo-blocked from the lon1 host, so the CLI deploy
+  runs from an allowed network with the vault automation token.)
+
 ## Build & tests (provable now, no owner creds)
 
 - [x] `npm run typecheck` clean (unified `@shopify/shopify-api` via overrides)
