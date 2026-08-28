@@ -1,0 +1,86 @@
+// Busymate AI for Shopify — the app's OWN Postgres (independent failure domain;
+// NOT the bmai/Supabase control plane, which is reached only via MCP).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Shopify session storage adapter table (@shopify/shopify-app-session-storage-prisma).
+/// Holds the offline access token per shop used by the Admin GraphQL connector.
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+
+  @@index([shop])
+}
+
+/// One row per installed store — maps a Shopify shop to its bmai white-label tenant.
+model ShopTenant {
+  shop           String   @id // <name>.myshopify.com
+  bmaiTenantId   String?  // tenants.id in the bmai control plane (via MCP)
+  slug           String?  @unique // <slug>.busymate.ai serving host
+  connectorId    String?  // mcp_servers row id for this store's Admin connector
+  provisionState String   @default("pending") // pending | provisioning | published | suspended | error
+  provisionError String?
+  customDomain   String?  // storefront custom domain, added to the embed-origin allowlist
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  billing BillingState?
+}
+
+/// Merchant-facing billing (Shopify Billing API). DISTINCT from the internal
+/// bmai usage_events cost ledger — two ledgers, never conflated.
+model BillingState {
+  shop                 String   @id
+  subscriptionId       String?  // AppSubscription GID
+  plan                 String   @default("starter")
+  status               String   @default("inactive") // inactive | pending | active | cancelled | frozen
+  usageLineItemId      String?  // AppUsageRecord line item GID (capped usage)
+  cappedAmountCents    Int      @default(5000) // merchant spend cap; widget NEVER disabled at cap
+  currency             String   @default("USD")
+  lastMeteredCursor    String?  // idempotent cursor into bmai usage_events
+  updatedAt            DateTime @updatedAt
+
+  tenant ShopTenant @relation(fields: [shop], references: [shop], onDelete: Cascade)
+}
+
+/// Singleton row holding the DURABLE bmai provisioning OAuth refresh credential.
+/// The OAuth refresh token ROTATES on every use (the bmdev edge revokes the prior
+/// one), so the current value must be PERSISTED here — not only seeded from env —
+/// or a restart after a rotation would present a revoked token. Value-blind: never
+/// logged. One row, keyed by a fixed id.
+model BmaiCredential {
+  id           String   @id @default("provision")
+  clientId     String
+  refreshToken String
+  updatedAt    DateTime @updatedAt
+}
+
+/// ES256 launch-key metadata for identified launch (the storefront visitor IdP).
+/// The PRIVATE key lives in a secret (env/vault), never the DB — only its kid + JWKS-published public JWK here.
+model LaunchKey {
+  kid        String   @id
+  publicJwk  String   // serialized public JWK, served at /.well-known/jwks.json
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}

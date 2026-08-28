@@ -1,0 +1,42 @@
+{%- comment -%}
+  Busymate AI white-label assistant — app-embed block.
+  Mounts the Busymate AI widget on every storefront page. Passes the shop domain +
+  whether a customer is logged in (for identified launch). No theme edit required;
+  the merchant enables it in Theme editor → App embeds.
+{%- endcomment -%}
+
+<script
+  src="{{ 'assistant.js' | asset_url }}"
+  data-shop="{{ shop.permanent_domain }}"
+  data-slug="{{ block.settings.assistant_slug | default: 'shop-' | append: shop.permanent_domain | split: '.' | first }}"
+  data-origin="{{ block.settings.origin | default: 'https://busymate.ai' }}"
+  data-label="{{ block.settings.launcher_label | default: 'Ask us' }}"
+  data-logged-in="{% if customer %}true{% else %}false{% endif %}"
+  defer></script>
+
+{% schema %}
+{
+  "name": "Busymate AI assistant",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "assistant_slug",
+      "label": "Assistant slug",
+      "info": "Your store's Busymate AI assistant slug (set automatically on install)."
+    },
+    {
+      "type": "text",
+      "id": "origin",
+      "label": "Serving origin",
+      "default": "https://busymate.ai"
+    },
+    {
+      "type": "text",
+      "id": "launcher_label",
+      "label": "Launcher label",
+      "default": "Ask us"
+    }
+  ]
+}
+{% endschema %}

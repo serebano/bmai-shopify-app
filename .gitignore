@@ -1,0 +1,29 @@
+node_modules
+/build
+/.cache
+/public/build
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# React Router generated types
+/.react-router
+
+# Prisma
+/prisma/dev.sqlite
+/prisma/*.db
+
+# Shopify CLI
+.shopify
+dist
+.turbo
+extensions/*/dist
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea

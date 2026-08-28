@@ -1,0 +1,19 @@
+{
+  "_locale": "en",
+  "app_name": "Busymate AI",
+  "tagline": "The Shopify AI agent that actually resolves",
+  "intro": "Grounded, source-cited support that takes real order actions — in 14 languages.",
+  "details": "Busymate AI turns your store into an AI support agent that resolves, not deflects. It answers only from your own products and policies (with citations, and refuses when unsure), handles WISMO and returns/refunds/cancellations with your confirmation and a spend cap, speaks 14 languages with auto-detect and RTL, and hands off cleanly to your team when confidence is low. Pay only for conversations it actually resolves — capped, and never switched off at the cap.",
+  "feature_bullets": [
+    "1-click install + auto-train on your catalog & policies",
+    "Order-aware: tracks, edits, cancels, refunds — with confirmation",
+    "Answers only from your store, with sources (no hallucinations)",
+    "Confidence-gated human handoff with clean hand-back",
+    "Pre-launch simulation on your past conversations",
+    "Transparent pay-per-resolution + a resolution guarantee",
+    "14 languages, auto-detected, RTL-ready"
+  ],
+  "pricing_summary": "Pay per resolved conversation. Set a monthly spend cap; the assistant keeps working past the cap.",
+  "privacy_url": "https://busymate.ai/legal/privacy",
+  "faq_url": "https://busymate.ai/shopify/faq"
+}

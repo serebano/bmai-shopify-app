@@ -1,0 +1,11 @@
+# Theme app extension — injects the bmai white-label widget into the storefront
+# as an app-embed block (NO theme.liquid edit; merchant toggles it in the theme
+# editor). Docs: https://shopify.dev/docs/apps/build/online-store/theme-app-extensions
+
+api_version = "2026-01"
+
+[[extensions]]
+type = "theme"
+name = "Busymate AI storefront assistant"
+handle = "storefront-assistant"
+uid = "b439d562-1c1e-0ef2-eb3c-6acfad1dfbfe5bdd5d7c"

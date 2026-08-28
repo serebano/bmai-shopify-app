@@ -1,0 +1,66 @@
+# Shopify app configuration — Busymate AI for Shopify (one Busymate AI tenant per store)
+# Docs: https://shopify.dev/docs/apps/build/cli-for-apps/app-configuration
+#
+# FORKING THIS APP? These values describe the official production app. To run your
+# own copy, create an app in the Shopify Partner Dashboard (Partners > Apps > Create
+# app) and run `shopify app config link` — the CLI overwrites `client_id`, and you
+# set your own `name` / `handle` / `application_url` / `redirect_urls` below.
+#
+# `client_id` is a PUBLIC OAuth client identifier (not a secret). It is left as a
+# placeholder here so a fork links its own app; `shopify app config link` writes it.
+
+client_id = "REPLACE_WITH_PARTNER_APP_CLIENT_ID"
+name = "Busymate AI"
+handle = "busymate-ai"
+application_url = "https://shopify.busymate.ai"
+embedded = true
+
+[access_scopes]
+# Least-privilege. read_all_orders (>60-day orders) needs Shopify approval and is
+# requested separately at review time, not here.
+scopes = "read_products,read_content,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
+
+[auth]
+redirect_urls = [
+  "https://shopify.busymate.ai/auth/callback",
+  "https://shopify.busymate.ai/auth/shopify/callback",
+  "https://shopify.busymate.ai/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-01"
+
+# --- Mandatory GDPR compliance webhooks (the #1 App Store rejection cause) ---
+# Handlers MUST actually satisfy the request (export/redact tenant data;
+# on shop/redact tear down the tenant). See app/routes/webhooks.compliance.tsx
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+uri = "https://shopify.busymate.ai/webhooks/compliance"
+
+# --- Lifecycle webhooks ---
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "https://shopify.busymate.ai/webhooks/app/uninstalled"
+
+[[webhooks.subscriptions]]
+topics = [ "app/scopes_update" ]
+uri = "https://shopify.busymate.ai/webhooks/app/scopes_update"
+
+# --- KB-freshness webhooks (re-ingest the tenant KB snapshot on change) ---
+[[webhooks.subscriptions]]
+topics = [ "products/create", "products/update", "products/delete" ]
+uri = "https://shopify.busymate.ai/webhooks/kb/products"
+
+# Orders/fulfillments carry PROTECTED CUSTOMER DATA — Shopify blocks subscribing
+# until the app is granted Protected Customer Data access (Partners → API access,
+# review-gated). Re-enable this block once approved; the handler is already live at
+# app/routes/webhooks.kb.orders.tsx
+# [[webhooks.subscriptions]]
+# topics = [ "orders/updated", "orders/cancelled", "fulfillments/create", "fulfillments/update" ]
+# uri = "https://shopify.busymate.ai/webhooks/kb/orders"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = false

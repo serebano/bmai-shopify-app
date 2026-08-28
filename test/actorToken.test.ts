@@ -1,0 +1,199 @@
+import crypto from "node:crypto";
+import { describe, expect, it } from "vitest";
+import { resolveCaller, type ResolveCallerDeps } from "../app/mcp/auth";
+import { verifyActorToken } from "../app/mcp/actorToken";
+
+// ── Interop mint (reproduces Busymate AI's signer independently, NOT the SUT's derive) ──
+// A byte-for-byte reproduction of
+//   v2/apps/agent/agent/lib/supportActorToken.ts::deriveSupportActorSecret
+//   + createSupportActorToken
+// so the SUT verifying this token is a genuine cross-implementation interop proof.
+const MASTER = "test-master-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUV"; // ≥32 bytes
+const OTHER_MASTER = "another-master-secret-9876543210-ZYXWVUTSRQPONMLKJI"; // ≥32 bytes
+const AUD = "https://shopify.busymate.ai";
+const TENANT = "tnt_11111111";
+const CONNECTOR = "con_22222222";
+const SHOP = "acme.myshopify.com";
+const NOW = 1_800_000_000;
+
+const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+
+function deriveSecret(master: string, tenantId: string, connectorId: string): Buffer {
+  return crypto
+    .createHmac("sha256", master)
+    .update("bmai-support-actor:v2\n")
+    .update(tenantId)
+    .update("\n")
+    .update(connectorId)
+    .digest();
+}
+
+interface MintOpts {
+  header?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  master?: string;
+  signTenantId?: string;
+  signConnectorId?: string;
+}
+
+function mint(opts: MintOpts = {}): string {
+  const header = { alg: "HS256", typ: "JWT", kid: "bmai-support-v2", ...(opts.header ?? {}) };
+  const payload: Record<string, unknown> = {
+    iss: "https://busymate.ai",
+    aud: AUD,
+    sub: "cust_1",
+    tenant_id: TENANT,
+    connector_id: CONNECTOR,
+    support_session_id: "sess_1",
+    policy_revision: 1,
+    iat: NOW,
+    nbf: NOW - 5,
+    exp: NOW + 300,
+    jti: "jti_1",
+    ...(opts.payload ?? {}),
+  };
+  const h = b64(header);
+  const p = b64(payload);
+  const signTenant = opts.signTenantId ?? String(payload.tenant_id ?? "");
+  const signConnector = opts.signConnectorId ?? String(payload.connector_id ?? "");
+  const secret = deriveSecret(opts.master ?? MASTER, signTenant, signConnector);
+  const sig = crypto.createHmac("sha256", secret).update(`${h}.${p}`).digest("base64url");
+  return `${h}.${p}.${sig}`;
+}
+
+function deps(overrides: Partial<ResolveCallerDeps> = {}): ResolveCallerDeps {
+  return {
+    resolveShop: async (t, c) => (t === TENANT && c === CONNECTOR ? SHOP : null),
+    master: MASTER,
+    audience: AUD,
+    now: NOW,
+    headerCallerAllowed: false,
+    ...overrides,
+  };
+}
+
+function req(token: string | null, headers: Record<string, string> = {}): Request {
+  const h: Record<string, string> = { ...headers };
+  if (token) h.authorization = `Bearer ${token}`;
+  return new Request("https://shopify.busymate.ai/mcp", { method: "POST", headers: h });
+}
+
+describe("actor-token verification (resolveCaller)", () => {
+  it("ACCEPTS a valid Busymate AI-minted actor token → shop from the DB, customerId = sub", async () => {
+    const caller = await resolveCaller(req(mint()), deps());
+    expect(caller).not.toBeNull();
+    expect(caller!.shop).toBe(SHOP); // shop comes from the injected tenant→shop map
+    expect(caller!.customerId).toBe("cust_1"); // = payload.sub
+    expect(caller!.confirmed).toBe(false);
+    expect(caller!.actor).toBe("bmai");
+  });
+
+  it("carries the x-bmai-confirmed acknowledgement", async () => {
+    const caller = await resolveCaller(req(mint(), { "x-bmai-confirmed": "1" }), deps());
+    expect(caller?.confirmed).toBe(true);
+  });
+
+  // ── REJECTS — each a one-field mutation, fail-closed → null ─────────────────
+  const rejects: Array<[string, () => Request, Partial<ResolveCallerDeps>?]> = [
+    ["wrong master (signed under a different master)", () => req(mint({ master: OTHER_MASTER }))],
+    [
+      "secret derived for a DIFFERENT connector under the same master",
+      () => req(mint({ signConnectorId: "con_ATTACKER" })),
+    ],
+    ["wrong aud", () => req(mint({ payload: { aud: "https://evil.example" } }))],
+    ["wrong iss", () => req(mint({ payload: { iss: "https://evil.example" } }))],
+    ["wrong kid", () => req(mint({ header: { kid: "not-the-actor-kid" } }))],
+    ["alg:none", () => req(mint({ header: { alg: "none" } }))],
+    ["expired (exp <= now)", () => req(mint({ payload: { iat: NOW - 400, nbf: NOW - 405, exp: NOW - 100 } }))],
+    ["over-long TTL (exp - iat > 300)", () => req(mint({ payload: { exp: NOW + 400 } }))],
+    ["missing sub", () => req(mint({ payload: { sub: undefined } }))],
+    ["missing support_session_id", () => req(mint({ payload: { support_session_id: undefined } }))],
+    ["missing jti", () => req(mint({ payload: { jti: undefined } }))],
+    [
+      "tenant/connector pair with NO matching shop row",
+      () =>
+        req(
+          mint({
+            payload: { tenant_id: "tnt_unknown", connector_id: "con_unknown" },
+            signTenantId: "tnt_unknown",
+            signConnectorId: "con_unknown",
+          }),
+        ),
+    ],
+  ];
+
+  for (const [label, build, depOverrides] of rejects) {
+    it(`REJECTS: ${label}`, async () => {
+      const caller = await resolveCaller(build(), deps(depOverrides));
+      expect(caller).toBeNull();
+    });
+  }
+
+  it("REJECTS: tampered payload (signature no longer matches)", async () => {
+    const parts = mint().split(".");
+    const mutated = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    mutated.sub = "cust_ATTACKER";
+    parts[1] = b64(mutated); // re-encode payload but keep the original signature
+    const caller = await resolveCaller(req(parts.join(".")), deps());
+    expect(caller).toBeNull();
+  });
+
+  it("REJECTS: unset master ⇒ no verifier (null)", async () => {
+    const caller = await resolveCaller(req(mint()), deps({ master: "" }));
+    expect(caller).toBeNull();
+  });
+
+  it("REJECTS: short master ⇒ no verifier (null)", async () => {
+    const caller = await resolveCaller(req(mint()), deps({ master: "too-short" }));
+    expect(caller).toBeNull();
+  });
+
+  // ── Legacy header caller gate ───────────────────────────────────────────────
+  it("with the header caller OFF, x-bmai-shop alone ⇒ null", async () => {
+    const caller = await resolveCaller(req(null, { "x-bmai-shop": SHOP }), deps({ headerCallerAllowed: false }));
+    expect(caller).toBeNull();
+  });
+
+  it("with the header caller ON (dev/test), x-bmai-shop resolves as a guest header caller", async () => {
+    const caller = await resolveCaller(req(null, { "x-bmai-shop": SHOP }), deps({ headerCallerAllowed: true }));
+    expect(caller).not.toBeNull();
+    expect(caller!.shop).toBe(SHOP);
+    expect(caller!.customerId).toBeNull();
+    expect(caller!.actor).toBe("header");
+  });
+
+  it("a bad actor token is NEVER downgraded to the header path (fail-closed)", async () => {
+    // header caller ON, but the bearer peeks as an actor token and fails to verify
+    // → must refuse, even though x-bmai-shop is also present.
+    const caller = await resolveCaller(
+      req(mint({ master: OTHER_MASTER }), { "x-bmai-shop": SHOP }),
+      deps({ headerCallerAllowed: true }),
+    );
+    expect(caller).toBeNull();
+  });
+});
+
+describe("verifyActorToken (pure verifier)", () => {
+  const opts = { master: MASTER, audience: AUD, now: NOW };
+
+  it("returns claims for a valid token", () => {
+    const claims = verifyActorToken(mint(), opts);
+    expect(claims).not.toBeNull();
+    expect(claims!.sub).toBe("cust_1");
+    expect(claims!.tenantId).toBe(TENANT);
+    expect(claims!.connectorId).toBe(CONNECTOR);
+    expect(claims!.supportSessionId).toBe("sess_1");
+  });
+
+  it("pins alg at the verifier level (alg:none ⇒ null even if peek were bypassed)", () => {
+    expect(verifyActorToken(mint({ header: { alg: "none" } }), opts)).toBeNull();
+  });
+
+  it("pins kid at the verifier level", () => {
+    expect(verifyActorToken(mint({ header: { kid: "wrong" } }), opts)).toBeNull();
+  });
+
+  it("fails closed with an unusable master", () => {
+    expect(verifyActorToken(mint(), { ...opts, master: "short" })).toBeNull();
+  });
+});
