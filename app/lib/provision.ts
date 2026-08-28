@@ -152,17 +152,20 @@ export async function runProvisionLifecycle(
     ...(existing?.customDomain ? [`https://${existing.customDomain}`] : []),
   ];
 
-  // 2) Branding (tenant-admin — the provisioner identity is homed as admin).
-  await soft("set_tenant_branding", { tenant_id: tenantId, branding: { productName: shop, assistantName: "bro" }, confirm: true });
+  // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
+  //    provisioner needs NO platform-operator role; #1982 security follow-up #5).
+  await soft("set_tenant_branding", { ...proofArgs(proof), tenant_id: tenantId, branding: { productName: shop, assistantName: "bro" }, confirm: true });
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).
   await soft("add_tenant_embed_origin", { ...proofArgs(proof), origins: storefrontOrigins, confirm: true });
 
   // NOTE: the merchant is NOT homed via add_tenant_admin here — that tool needs the
   // merchant's bmai `user_id`, which a Shopify install does not provide (only an
-  // email, and an offline install none). The PROVISIONER identity is already the
-  // tenant-admin (provision_partner_tenant homes it), which authorizes the config
-  // below; the merchant is linked to their tenant on first bmai sign-in.
+  // email, and an offline install none). The mgmt steps below authorize by
+  // PROOF-OF-SHOP (each re-resolves the tenant from the proven shop), so the
+  // provisioner needs no platform-operator role (can_manage_tenant_support_for_user's
+  // tenant-admin arm requires current_tenant == target, which a multi-tenant
+  // provisioner never satisfies); the merchant is linked on first bmai sign-in.
 
   // 5) Register the per-store Shopify Admin connector (signed_actor_token + 4 tiers).
   // Unauthenticated server access; delegation_mode:'none' → the connector registers
@@ -173,6 +176,7 @@ export async function runProvisionLifecycle(
   // actually verifies the actor HMAC (a P2 TODO). Until then this stays
   // 'none' (no green-while-dead claim).
   const connector = await soft<{ id?: string; connector?: { id?: string } }>("upsert_tenant_support_connector", {
+    ...proofArgs(proof),
     tenant_id: tenantId,
     endpoint: deps.connectorEndpoint(),
     namespace: "shopify-admin",
@@ -187,6 +191,7 @@ export async function runProvisionLifecycle(
 
   // 6) Publish the runtime — LOAD-BEARING (the step that makes the widget resolve).
   const published = await call("publish_tenant_runtime", {
+    ...proofArgs(proof),
     tenant_id: tenantId,
     launch_origins: [servingHost(slug)],
     embed_origins: storefrontOrigins,

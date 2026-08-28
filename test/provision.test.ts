@@ -86,6 +86,12 @@ describe("tenant provisioning lifecycle (seam)", () => {
     // publish sends the derived serving host as a launch origin + confirm
     expect(seen["publish_tenant_runtime"]).toMatchObject({ tenant_id: "t_1", confirm: true });
     expect(seen["publish_tenant_runtime"].launch_origins).toContain(servingHost("shop-acme"));
+    // #1982 security follow-up #5 — LEAST PRIVILEGE: every tenant-management call
+    // carries proof-of-shop so it authorizes via the proof arm, NOT the platform-
+    // operator role (which the provisioner no longer needs / holds).
+    for (const mgmt of ["set_tenant_branding", "upsert_tenant_support_connector", "publish_tenant_runtime"]) {
+      expect(seen[mgmt]).toMatchObject({ partner: "shopify", shop: session.shop, proof: "deadbeef", ts: STUB_PROOF.ts });
+    }
   });
 
   it("registers the connector read-only (public + identified; delegated writes deferred)", async () => {
