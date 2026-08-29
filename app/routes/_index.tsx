@@ -1,27 +1,33 @@
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import { login } from "../shopify.server";
+import { getStoreListing, storePageUrl } from "../lib/storeListing.server";
 
 // Public entry: if a ?shop= is present, kick off managed install; else a splash.
+// The splash's CONTENT (name, tagline, privacy link) renders from the canonical
+// store record — the single source of truth shared with busymate.ai/store — so
+// editing the record updates this page automatically (see storeListing.server).
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   if (url.searchParams.get("shop")) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
-  return { showForm: Boolean(login) };
+  const listing = await getStoreListing();
+  // Derived server-side so the component never touches the .server module
+  // (React Router strips server code from the loader only).
+  return { showForm: Boolean(login), listing, installUrl: storePageUrl(listing) };
 };
 
-export const meta: MetaFunction = () => [
-  { title: "Busymate AI for Shopify" },
+export const meta: MetaFunction<typeof loader> = ({ data }) => [
+  { title: `${data?.listing.name ?? "Busymate AI"} for Shopify` },
   {
     name: "description",
-    content: "Grounded, order-aware AI support for your store.",
+    content:
+      data?.listing.tagline ?? "Grounded, order-aware AI support for your store",
   },
 ];
 
-const STORE_URL = "https://busymate.ai/store/apps/busymate-ai-shopify";
 const DOCS_URL = "https://busymate.ai/docs";
-const PRIVACY_URL = "https://busymate.ai/legal/privacy";
 
 // Minimal branded splash — theme-aware (system light/dark), self-contained,
 // no external assets. Tokens mirror the busymate.ai store page palette.
@@ -102,26 +108,29 @@ function BusymateMark() {
 }
 
 export default function LandingPage() {
+  const { listing, installUrl } = useLoaderData<typeof loader>();
   return (
     <main className="bm-landing">
       <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div className="bm-card">
         <div className="bm-wordmark">
           <BusymateMark />
-          <span className="bm-wordmark-name">Busymate AI</span>
+          <span className="bm-wordmark-name">{listing.name}</span>
           <span className="bm-wordmark-for">for Shopify</span>
         </div>
-        <p className="bm-tagline">
-          Grounded, order-aware AI support for your store.
-        </p>
-        <a className="bm-install" href={STORE_URL}>
-          Get Busymate AI
+        <p className="bm-tagline">{listing.tagline}</p>
+        <a className="bm-install" href={installUrl}>
+          Get {listing.name}
         </a>
         <p className="bm-coming">Coming to the Shopify App Store</p>
         <nav className="bm-links" aria-label="Footer">
           <a href={DOCS_URL}>Docs</a>
-          <span aria-hidden="true">·</span>
-          <a href={PRIVACY_URL}>Privacy</a>
+          {listing.privacy_url ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <a href={listing.privacy_url}>Privacy</a>
+            </>
+          ) : null}
         </nav>
       </div>
     </main>
