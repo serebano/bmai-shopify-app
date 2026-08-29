@@ -239,6 +239,11 @@ export async function onAppInstalled(session: Session): Promise<void> {
     // Recorded as error state for the UI; log for operability. Not re-thrown.
     console.error(`[bmai] onAppInstalled did not publish ${session.shop}: ${outcome.error ?? "unknown"}`);
   }
+  // Best-effort (soft) step failures don't block publish, but log them so a
+  // silently-degraded connector/branding step is visible in operations.
+  if (outcome.warnings.length) {
+    console.warn(`[bmai] onAppInstalled warnings for ${session.shop}: ${outcome.warnings.join(" | ")}`);
+  }
 }
 
 /**
