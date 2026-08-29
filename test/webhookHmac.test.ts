@@ -7,7 +7,10 @@ import { verifyAppProxyHmac } from "../app/lib/storefrontIdentity";
 // Same HMAC-SHA256 primitive Shopify uses for webhook signing; a regression here
 // would let anyone impersonate any customer.
 
-const SECRET = "shpss_test_secret_deadbeef";
+// Synthetic HMAC key — NOT a real Shopify shared secret. verifyAppProxyHmac treats
+// it as an opaque string, so any value works; a non-credential-shaped literal keeps
+// secret scanners quiet on this public repo.
+const SECRET = "example-app-proxy-shared-secret-not-real";
 
 function signedUrl(
   params: Record<string, string>,

@@ -20,7 +20,9 @@ const noKey = {} as NodeJS.ProcessEnv;
 
 describe("field cipher (AES-256-GCM at rest)", () => {
   it("round-trips a value through encrypt → decrypt", () => {
-    const token = "shpat_offline_access_token_abc123";
+    // Synthetic opaque plaintext — NOT a credential. The cipher treats it as an
+    // arbitrary string, so no credential-shaped literal is needed (avoids secret-scanner noise).
+    const token = "example-access-token-value-not-a-secret";
     const enc = encryptField(token, withKey);
     expect(enc).not.toBe(token);
     expect(isEncrypted(enc)).toBe(true);

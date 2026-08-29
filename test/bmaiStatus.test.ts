@@ -39,7 +39,10 @@ describe("/api/bmai/status loader", () => {
     delete process.env.LAUNCH_SIGNING_KEY;
     expect((await status()).launchIdentity).toBe(false);
 
-    process.env.LAUNCH_SIGNING_KEY = "-----BEGIN PRIVATE KEY-----\\nMIG...\\n-----END PRIVATE KEY-----";
+    // launchIdentityConfigured() only checks the value CONTAINS "PRIVATE KEY" (identity.ts),
+    // so a synthetic sentinel carrying that substring exercises the true-branch WITHOUT a
+    // PEM-armored literal that would trip secret scanners on this public repo.
+    process.env.LAUNCH_SIGNING_KEY = "synthetic-launch-key-sentinel (contains PRIVATE KEY marker, not a real PEM)";
     const body = await status();
     expect(body.launchIdentity).toBe(true);
     // Booleans only — the response must never echo a secret value.
