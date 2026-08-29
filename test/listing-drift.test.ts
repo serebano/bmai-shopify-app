@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { canonicalIntro, computeListingDrift, normalizePlan } from "../scripts/lib/listing-drift.mjs";
+import { normalizeRecord } from "../scripts/lib/store-canonical.mjs";
 
 const RECORD = {
   slug: "busymate-ai-shopify",
@@ -106,5 +107,22 @@ describe("helpers", () => {
   });
   it("normalizePlan accepts snake_case amount_cents", () => {
     expect(normalizePlan({ name: "X", amount_cents: 500 }).amountCents).toBe(500);
+  });
+});
+
+describe("normalizeRecord — the endpoint envelope → flat record", () => {
+  it("maps the PRODUCTION shape { app, plans } (plans is a sibling of app)", () => {
+    const r = normalizeRecord({
+      app: { slug: "s", name: "N", tagline: "T", descriptionMd: "D", pricingModel: "usage" },
+      plans: [{ name: "Free", amountCents: 0 }],
+    });
+    expect(r).toMatchObject({ slug: "s", name: "N", tagline: "T", descriptionMd: "D", pricingModel: "usage" });
+    expect(r.pricingPlans).toHaveLength(1);
+    expect(r.pricingPlans[0].name).toBe("Free");
+  });
+
+  it("falls back to app.pricingPlans for a saved --record file", () => {
+    const r = normalizeRecord({ app: { slug: "s", name: "N", pricingPlans: [{ name: "Pro" }] } });
+    expect(r.pricingPlans[0].name).toBe("Pro");
   });
 });

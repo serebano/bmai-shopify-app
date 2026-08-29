@@ -17,15 +17,31 @@ export const DEFAULT_ENDPOINT = `https://busymate.ai/api/store/apps/${APP_SLUG}`
 export class UnverifiedError extends Error {}
 
 /**
+ * Normalize the endpoint envelope `{ app, developer, category, media, plans,
+ * version }` (the shared loader's shape) into the FLAT record the drift
+ * comparator + generator consume. `plans` is a sibling of `app`; a saved
+ * `--record` file may nest `pricingPlans` under `app` instead — accept both.
+ */
+export function normalizeRecord(body) {
+  const app = body?.app ?? body ?? {};
+  return {
+    slug: app.slug,
+    name: app.name,
+    tagline: app.tagline ?? null,
+    descriptionMd: app.descriptionMd ?? app.description_md ?? null,
+    pricingModel: app.pricingModel ?? app.pricing_model ?? null,
+    pricingPlans: body?.plans ?? app.pricingPlans ?? app.plans ?? [],
+  };
+}
+
+/**
  * @param {{ endpoint?: string, recordFile?: string }} opts
  * @returns {Promise<{ record: object, source: string }>}
  */
 export async function fetchCanonicalRecord(opts = {}) {
   if (opts.recordFile) {
-    const raw = readFileSync(opts.recordFile, "utf8");
-    const parsed = JSON.parse(raw);
-    const record = parsed.app ?? parsed; // accept the endpoint envelope or a bare record
-    return { record, source: `file:${opts.recordFile}` };
+    const body = JSON.parse(readFileSync(opts.recordFile, "utf8"));
+    return { record: normalizeRecord(body), source: `file:${opts.recordFile}` };
   }
   const endpoint = opts.endpoint || process.env.BMAI_STORE_ENDPOINT || DEFAULT_ENDPOINT;
   let res;
@@ -42,7 +58,7 @@ export async function fetchCanonicalRecord(opts = {}) {
   }
   const body = await res.json().catch(() => null);
   if (!body?.app) throw new UnverifiedError(`store endpoint returned no app for ${endpoint}`);
-  return { record: body.app, source: endpoint };
+  return { record: normalizeRecord(body), source: endpoint };
 }
 
 /** Extract the `name = "..."` value from shopify.app.toml (top-level, no TOML dep). */

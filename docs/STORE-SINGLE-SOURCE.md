@@ -11,22 +11,26 @@ here **derives** from it. Program: busymate-devtools#2036.
 GET https://busymate.ai/api/store/apps/busymate-ai-shopify
 ```
 
-Public (published apps only), no auth, `Access-Control-Allow-Origin: *`, short CDN cache. Returns:
+Public (published apps only), no auth, `Access-Control-Allow-Origin: *`, short CDN cache. The body is
+the SAME `StoreAppDetailResult` the `busymate.ai/store` page renders from (`app` + siblings; storage
+paths already resolved to public URLs; `reviews` and the connector manifest omitted):
 
 ```jsonc
-{ "app": {
-  "slug": "busymate-ai-shopify", "name": "Busymate AI",
-  "tagline": "…", "descriptionMd": "…", "iconUrl": "…",
-  "installKind": "connector", "pricingModel": "usage",
-  "homepageUrl": "…", "privacyUrl": "…", "primaryLocale": "en",
-  "category": { "slug": "sales-support", "name": "Sales & Support" },
+{
+  "app": {
+    "slug": "busymate-ai-shopify", "name": "Busymate AI",
+    "tagline": "…", "descriptionMd": "…", "iconUrl": "…",
+    "installKind": "connector", "pricingModel": "usage",
+    "homepageUrl": "…", "privacyUrl": "…", "badges": [],
+    "installCount": 0, "ratingAvg": 0, "ratingCount": 0
+  },
   "developer": { "slug": "busymate", "displayName": "Busymate", "verified": true },
-  "pricingPlans": [ { "kind": "free", "name": "Free", "amountCents": 0, "currency": "usd",
-                     "interval": "month", "features": ["…"] } ],
-  "media":   [ { "kind": "screenshot", "url": "…", "alt": "…", "width": 2880, "height": 1620 } ],
-  "locales": [ { "locale": "es", "tagline": "…", "descriptionMd": "…" } ],
+  "category": { "slug": "sales-support", "name": "Sales & Support" },
+  "media": [ { "kind": "screenshot", "url": "…", "alt": "…", "position": 1 } ],
+  "plans": [ { "kind": "free", "name": "Free", "amountCents": 0, "currency": "usd",
+               "interval": "month", "features": ["…"] } ],
   "version": { "version": "1.0.0", "changelogMd": "…" }
-} }
+}
 ```
 
 The **public root** (`app/routes/_index.tsx`, served at `store.busymate.ai/`) should render from this —
@@ -36,7 +40,7 @@ construction. Fetch it in the loader (with `BMAI_STORE_ENDPOINT` overridable for
 ```ts
 const res = await fetch(process.env.BMAI_STORE_ENDPOINT
   ?? "https://busymate.ai/api/store/apps/busymate-ai-shopify");
-const { app } = await res.json();
+const { app, developer, category, media, plans, version } = await res.json();
 ```
 
 Do **not** hardcode the copy or prices into a component — that reintroduces the drift this removes.
