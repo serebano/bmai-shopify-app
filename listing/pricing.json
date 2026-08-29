@@ -1,0 +1,60 @@
+{
+  "_generated": "DERIVED from the canonical store_apps record — do not hand-edit.",
+  "_source": "https://busymate.ai/api/store/apps/busymate-ai-shopify",
+  "_note": "Managed Pricing is Partner-Dashboard-only; this is the source-of-record a human enters there. `npm run drift-check` asserts it matches the canonical record.",
+  "app": "busymate-ai-shopify",
+  "pricingModel": "usage",
+  "plans": [
+    {
+      "kind": "free",
+      "name": "Free",
+      "amountCents": 0,
+      "currency": "usd",
+      "interval": "month",
+      "features": [
+        "25 AI resolutions/month, then routes to your team",
+        "No credit card required",
+        "Never switched off at the cap"
+      ]
+    },
+    {
+      "kind": "flat",
+      "name": "Starter",
+      "amountCents": 1900,
+      "currency": "usd",
+      "interval": "month",
+      "features": [
+        "38 AI resolutions included, then $0.49/resolution",
+        "$200/month spend cap",
+        "Unlimited seats",
+        "Never switched off at the cap"
+      ]
+    },
+    {
+      "kind": "flat",
+      "name": "Growth",
+      "amountCents": 9900,
+      "currency": "usd",
+      "interval": "month",
+      "features": [
+        "225 AI resolutions included, then $0.44/resolution",
+        "$1,000/month spend cap",
+        "Unlimited seats",
+        "Voice add-on available ($0.30/voice-minute)"
+      ]
+    },
+    {
+      "kind": "flat",
+      "name": "Scale",
+      "amountCents": 34900,
+      "currency": "usd",
+      "interval": "month",
+      "features": [
+        "830 AI resolutions included, then $0.42/resolution",
+        "$5,000/month spend cap",
+        "Unlimited seats + AI voice",
+        "Priority support"
+      ]
+    }
+  ]
+}

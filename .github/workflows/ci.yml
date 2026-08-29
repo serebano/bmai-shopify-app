@@ -18,4 +18,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm test
+      # Advisory: compare the LIVE canonical store record (busymate.ai) against
+      # this repo's derived listing artifacts (busymate-devtools#2036). Real
+      # drift exits 1; an unreachable endpoint exits 2 (UNVERIFIED, not a pass).
+      # Non-blocking here — the blocking comparison LOGIC is covered by
+      # test/listing-drift.test.ts in `npm test`; this leg needs live network.
+      - name: store listing drift-check (advisory)
+        continue-on-error: true
+        run: npm run drift-check
       - run: npm run build
