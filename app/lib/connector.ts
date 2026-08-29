@@ -1,4 +1,4 @@
-const APP_URL = process.env.SHOPIFY_APP_URL || "https://shopify.busymate.ai";
+const APP_URL = process.env.SHOPIFY_APP_URL || "https://store.busymate.ai";
 
 /** The endpoint Busymate AI registers as the per-store connector's mcp_servers row. */
 export function connectorEndpoint(): string {
@@ -14,6 +14,6 @@ export function connectorAudience(): string {
   try {
     return new URL(connectorEndpoint()).origin;
   } catch {
-    return "https://shopify.busymate.ai";
+    return "https://store.busymate.ai";
   }
 }

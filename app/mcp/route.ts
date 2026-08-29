@@ -3,7 +3,7 @@ import { adminForShop } from "./shopifyAdmin";
 import { TOOLS, toolByName, publicToolNames } from "./tools/registry";
 import { errorResult, type ToolContext } from "./tools/types";
 
-const APP_URL = process.env.SHOPIFY_APP_URL || "https://shopify.busymate.ai";
+const APP_URL = process.env.SHOPIFY_APP_URL || "https://store.busymate.ai";
 const PROTOCOL_VERSION = "2025-06-18";
 
 interface JsonRpcRequest {

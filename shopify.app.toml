@@ -12,7 +12,7 @@
 client_id = "REPLACE_WITH_PARTNER_APP_CLIENT_ID"
 name = "Busymate AI"
 handle = "busymate-ai"
-application_url = "https://shopify.busymate.ai"
+application_url = "https://store.busymate.ai"
 embedded = true
 
 [access_scopes]
@@ -22,9 +22,9 @@ scopes = "read_products,read_content,read_orders,read_customers,read_fulfillment
 
 [auth]
 redirect_urls = [
-  "https://shopify.busymate.ai/auth/callback",
-  "https://shopify.busymate.ai/auth/shopify/callback",
-  "https://shopify.busymate.ai/api/auth/callback"
+  "https://store.busymate.ai/auth/callback",
+  "https://store.busymate.ai/auth/shopify/callback",
+  "https://store.busymate.ai/api/auth/callback"
 ]
 
 [webhooks]
@@ -35,27 +35,27 @@ api_version = "2026-07"
 # on shop/redact tear down the tenant). See app/routes/webhooks.compliance.tsx
 [[webhooks.subscriptions]]
 compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-uri = "https://shopify.busymate.ai/webhooks/compliance"
+uri = "https://store.busymate.ai/webhooks/compliance"
 
 # --- Lifecycle webhooks ---
 [[webhooks.subscriptions]]
 topics = [ "app/uninstalled" ]
-uri = "https://shopify.busymate.ai/webhooks/app/uninstalled"
+uri = "https://store.busymate.ai/webhooks/app/uninstalled"
 
 [[webhooks.subscriptions]]
 topics = [ "app/scopes_update" ]
-uri = "https://shopify.busymate.ai/webhooks/app/scopes_update"
+uri = "https://store.busymate.ai/webhooks/app/scopes_update"
 
 # Billing status sync — accept/decline/cancel/freeze/re-request converge here so
 # resolveBillingAccess() reflects the real subscription (Req 1.2.2).
 [[webhooks.subscriptions]]
 topics = [ "app_subscriptions/update" ]
-uri = "https://shopify.busymate.ai/webhooks/app_subscriptions/update"
+uri = "https://store.busymate.ai/webhooks/app_subscriptions/update"
 
 # --- KB-freshness webhooks (re-ingest the tenant KB snapshot on change) ---
 [[webhooks.subscriptions]]
 topics = [ "products/create", "products/update", "products/delete" ]
-uri = "https://shopify.busymate.ai/webhooks/kb/products"
+uri = "https://store.busymate.ai/webhooks/kb/products"
 
 # Orders/fulfillments carry PROTECTED CUSTOMER DATA — Shopify blocks subscribing
 # until the app is granted Protected Customer Data access (Partners → API access,
@@ -63,7 +63,7 @@ uri = "https://shopify.busymate.ai/webhooks/kb/products"
 # app/routes/webhooks.kb.orders.tsx
 # [[webhooks.subscriptions]]
 # topics = [ "orders/updated", "orders/cancelled", "fulfillments/create", "fulfillments/update" ]
-# uri = "https://shopify.busymate.ai/webhooks/kb/orders"
+# uri = "https://store.busymate.ai/webhooks/kb/orders"
 
 [pos]
 embedded = false
