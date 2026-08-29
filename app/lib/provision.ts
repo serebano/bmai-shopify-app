@@ -45,6 +45,7 @@ export interface ProvisionSession {
 export interface TenantRecord {
   bmaiTenantId?: string | null;
   customDomain?: string | null;
+  connectorId?: string | null;
 }
 
 export type TenantPatch = {
@@ -201,7 +202,12 @@ export async function runProvisionLifecycle(
     confirm: true,
   });
   // The tool returns { ok, id, connector: { id } } — capture the connector's id.
-  const connectorId = connector.data?.id ?? connector.data?.connector?.id ?? null;
+  // PRESERVE a previously-captured id: the connector step is BEST-EFFORT and an
+  // idempotent re-upsert (every re-auth) may return ok without re-echoing the id,
+  // so falling back to `null` would NULL a good connectorId and regress the app's
+  // "connector registered" state on every re-auth. Fall back to the existing id.
+  const connectorId =
+    connector.data?.id ?? connector.data?.connector?.id ?? existing?.connectorId ?? null;
 
   // 6) Publish the runtime — LOAD-BEARING (the step that makes the widget resolve).
   const published = await call(

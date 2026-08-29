@@ -194,7 +194,9 @@ function liveProvisionDeps(): ProvisionDeps {
     getTenant: (shop) =>
       prisma.shopTenant.findUnique({
         where: { shop },
-        select: { bmaiTenantId: true, customDomain: true },
+        // connectorId is read back so a best-effort re-upsert that doesn't re-echo
+        // the id preserves it instead of nulling the "connector registered" state.
+        select: { bmaiTenantId: true, customDomain: true, connectorId: true },
       }),
     saveTenant: async (shop, patch) => {
       const slug = patch.slug ?? shopToSlug(shop);

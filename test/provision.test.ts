@@ -284,6 +284,34 @@ describe("tenant provisioning lifecycle (seam)", () => {
     expect(states.at(-1)?.provisionState).toBe("published");
   });
 
+  it("PRESERVES a previously-captured connectorId when an idempotent re-upsert returns no id", async () => {
+    // Re-auth path: the tenant already has a connector; the best-effort re-upsert
+    // returns ok but WITHOUT re-echoing the id. The final state must keep the id,
+    // not null it (which regressed the app's "connector registered" display).
+    const states: TenantPatch[] = [];
+    const call = vi.fn(async (name: string) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_support_connector") return { ok: true }; // no id echoed
+      return { ok: true };
+    });
+    const deps: ProvisionDeps = {
+      call: call as unknown as ProvisionDeps["call"],
+      getTenant: async () => ({ bmaiTenantId: "t_1", customDomain: null, connectorId: "c_existing" }),
+      saveTenant: async (_shop, patch) => {
+        states.push(patch);
+      },
+      connectorEndpoint: () => "https://store.busymate.ai/mcp",
+      embedOrigin: "https://busymate.ai",
+      signProof: () => STUB_PROOF,
+      delegationReady: false,
+    };
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.connectorId).toBe("c_existing");
+    expect(states.at(-1)?.provisionState).toBe("published");
+    expect(states.at(-1)?.connectorId).toBe("c_existing");
+  });
+
   it("still provisions with NO proof (operator path) — proofArgs are simply omitted", async () => {
     const seen: Record<string, Record<string, unknown>> = {};
     const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
