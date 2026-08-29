@@ -20,6 +20,8 @@ describe("/api/bmai/status loader", () => {
     expect(body.actorVerifier).toBe(true);
     expect(body.ok).toBe(true);
     expect(typeof body.audience).toBe("string");
+    // The app host migrated shopify.busymate.ai -> store.busymate.ai (the App Store
+    // forbids "shopify" in app URLs); connectorAudience() defaults to it here.
     expect(body.audience).toBe("https://store.busymate.ai");
   });
 
@@ -39,10 +41,7 @@ describe("/api/bmai/status loader", () => {
     delete process.env.LAUNCH_SIGNING_KEY;
     expect((await status()).launchIdentity).toBe(false);
 
-    // launchIdentityConfigured() only checks the value CONTAINS "PRIVATE KEY" (identity.ts),
-    // so a synthetic sentinel carrying that substring exercises the true-branch WITHOUT a
-    // PEM-armored literal that would trip secret scanners on this public repo.
-    process.env.LAUNCH_SIGNING_KEY = "synthetic-launch-key-sentinel (contains PRIVATE KEY marker, not a real PEM)";
+    process.env.LAUNCH_SIGNING_KEY = "-----BEGIN PRIVATE KEY-----\\nMIG...\\n-----END PRIVATE KEY-----";
     const body = await status();
     expect(body.launchIdentity).toBe(true);
     // Booleans only — the response must never echo a secret value.

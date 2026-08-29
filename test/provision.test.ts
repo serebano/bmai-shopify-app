@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runProvisionLifecycle,
+  provisionOnInstall,
   CONNECTOR_POLICIES,
   servingHost,
   type ProvisionDeps,
@@ -199,6 +200,88 @@ describe("tenant provisioning lifecycle (seam)", () => {
     expect(out.tenantId).toBe("t_1"); // created…
     expect(states.at(-1)?.provisionState).toBe("error"); // …but not live
     expect(states.at(-1)?.provisionError).toMatch(/publish_tenant_runtime/);
+  });
+
+  // --- provisionOnInstall: the afterAuth guard that must NEVER throw ---
+  // (App Store review 2.1.1/2.1.3: an afterAuth throw becomes a bare embedded-app
+  // 500. runProvisionLifecycle records error state for a failed MCP step but still
+  // THROWS at its Prisma write boundary — the guard is what makes afterAuth safe.)
+
+  it("provisionOnInstall NEVER throws — a Prisma write race records error state instead of a 500", async () => {
+    // saveTenant throws on the FIRST write (the initial `provisioning` state), like
+    // a P2002 unique-constraint race from Shopify's App-Bridge double install bounce.
+    let writes = 0;
+    const states: TenantPatch[] = [];
+    const call = vi.fn(async () => ({ ok: true }));
+    const deps: ProvisionDeps = {
+      call: call as unknown as ProvisionDeps["call"],
+      getTenant: async () => null,
+      saveTenant: async (_shop, patch) => {
+        writes += 1;
+        if (writes === 1) throw new Error("Unique constraint failed on the fields: (`shop`)");
+        states.push(patch);
+      },
+      connectorEndpoint: () => "https://store.busymate.ai/mcp",
+      embedOrigin: "https://busymate.ai",
+      signProof: () => STUB_PROOF,
+      delegationReady: false,
+    };
+
+    // Must RESOLVE (never reject) — that is the whole contract afterAuth relies on.
+    await expect(provisionOnInstall(session, deps)).resolves.toMatchObject({ ok: false });
+    // The failure is recorded as an operational error state (surfaced in the app UI).
+    expect(states.at(-1)?.provisionState).toBe("error");
+    expect(states.at(-1)?.provisionError).toMatch(/Unique constraint/);
+  });
+
+  it("provisionOnInstall swallows a TOTAL DB outage (even the error-record write throws)", async () => {
+    const deps: ProvisionDeps = {
+      call: (async () => ({ ok: true })) as unknown as ProvisionDeps["call"],
+      getTenant: async () => {
+        throw new Error("DB down");
+      },
+      saveTenant: async () => {
+        throw new Error("DB down");
+      },
+      connectorEndpoint: () => "https://store.busymate.ai/mcp",
+      embedOrigin: "https://busymate.ai",
+      signProof: () => STUB_PROOF,
+      delegationReady: false,
+    };
+    // Nothing can be persisted, yet the guard must still resolve — afterAuth cannot
+    // be allowed to 500 the embedded app even when the DB is entirely unreachable.
+    await expect(provisionOnInstall(session, deps)).resolves.toMatchObject({ ok: false });
+  });
+
+  it("provisionOnInstall does NOT stomp a racing success — a concurrent publish wins", async () => {
+    // The initial write throws (lost the race), but by the time we re-read, the
+    // racing install has already provisioned the tenant → keep the good state.
+    const call = vi.fn(async () => ({ ok: true }));
+    const deps: ProvisionDeps = {
+      call: call as unknown as ProvisionDeps["call"],
+      getTenant: async () => ({ bmaiTenantId: "t_win", customDomain: null }),
+      saveTenant: async () => {
+        throw new Error("Unique constraint failed on the fields: (`shop`)");
+      },
+      connectorEndpoint: () => "https://store.busymate.ai/mcp",
+      embedOrigin: "https://busymate.ai",
+      signProof: () => STUB_PROOF,
+      delegationReady: false,
+    };
+    const out = await provisionOnInstall(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.tenantId).toBe("t_win");
+  });
+
+  it("provisionOnInstall passes a normal successful lifecycle straight through", async () => {
+    const call = vi.fn(async (name: string) =>
+      name === "provision_partner_tenant" ? { ok: true, data: { tenant_id: "t_ok" } } : { ok: true },
+    );
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    const out = await provisionOnInstall(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.tenantId).toBe("t_ok");
+    expect(states.at(-1)?.provisionState).toBe("published");
   });
 
   it("still provisions with NO proof (operator path) — proofArgs are simply omitted", async () => {

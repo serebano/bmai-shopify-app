@@ -35,8 +35,24 @@ const shopify = shopifyApp({
   hooks: {
     // afterAuth = the install/re-auth convergence point. Runs the bmai MCP
     // provision lifecycle (idempotent). See bmai.server.ts::onAppInstalled.
+    //
+    // afterAuth MUST NOT throw: it runs AFTER the session is persisted, inside the
+    // Shopify token-exchange strategy, which converts ANY afterAuth throw into a
+    // bare `500 Internal Server Error` on the embedded app's first load — the App
+    // Store review failure (Req 2.1.1 "no critical errors" / 2.1.3 "an interactive
+    // UI, not a web 500"). Both steps are idempotent and re-run on every re-auth,
+    // so a transient failure here is best-effort: webhook registration is logged
+    // and swallowed; provisioning errors are recorded + surfaced in the app UI
+    // (onAppInstalled never throws).
     afterAuth: async ({ session }) => {
-      await shopify.registerWebhooks({ session });
+      try {
+        await shopify.registerWebhooks({ session });
+      } catch (err) {
+        console.error(
+          `[shopify] registerWebhooks failed for ${session.shop}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
       await onAppInstalled(session);
     },
   },

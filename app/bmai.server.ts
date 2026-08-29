@@ -22,7 +22,7 @@ import type { Session } from "@shopify/shopify-app-react-router/server";
 import prisma from "./db.server";
 import { shopToSlug } from "./lib/tenantSlug";
 import { connectorEndpoint } from "./lib/connector";
-import { runProvisionLifecycle, type ProvisionDeps } from "./lib/provision";
+import { provisionOnInstall, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
@@ -217,15 +217,26 @@ function liveProvisionDeps(): ProvisionDeps {
  * Install / re-auth convergence. Idempotent: safe to re-run on every afterAuth.
  * Delegates to the injectable orchestrator (app/lib/provision.ts) so the sequence
  * is unit-tested with mocks; here we bind the real MCP client + Prisma tenant-store.
+ *
+ * NEVER THROWS — calls the `provisionOnInstall` guard (not `runProvisionLifecycle`
+ * directly). afterAuth runs inside Shopify's token-exchange strategy, which turns
+ * any afterAuth throw into a bare `500 Internal Server Error` on the embedded app's
+ * first load (App Store Req 2.1.1 / 2.1.3). A provisioning failure is therefore
+ * recorded as an operational error state the app UI surfaces + the next re-auth /
+ * Connector "Retry" re-runs — never a web 500 that blocks the merchant UI.
  */
 export async function onAppInstalled(session: Session): Promise<void> {
   // email is best-effort: present only on an ONLINE session (associated user);
   // an offline install has none, so add_tenant_admin is skipped until app.settings.
   const email = session.onlineAccessInfo?.associated_user?.email ?? undefined;
-  await runProvisionLifecycle(
+  const outcome = await provisionOnInstall(
     { shop: session.shop, email, accessToken: session.accessToken },
     liveProvisionDeps(),
   );
+  if (!outcome.ok) {
+    // Recorded as error state for the UI; log for operability. Not re-thrown.
+    console.error(`[bmai] onAppInstalled did not publish ${session.shop}: ${outcome.error ?? "unknown"}`);
+  }
 }
 
 /**

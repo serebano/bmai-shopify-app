@@ -230,6 +230,62 @@ export async function runProvisionLifecycle(
 }
 
 /**
+ * INSTALL-TIME GUARD — the ONLY entry point afterAuth may call.
+ *
+ * `runProvisionLifecycle` records `error` state for a failed MCP step but still
+ * THROWS at its dependency boundary (a Prisma `getTenant`/`saveTenant` write — e.g.
+ * a `P2002` unique-constraint race when Shopify's App-Bridge double-bounce fires
+ * two concurrent installs for the same new shop). afterAuth MUST NOT throw: the
+ * Shopify token-exchange strategy converts ANY afterAuth throw into a bare
+ * `500 Internal Server Error` on the embedded app's FIRST load — which is exactly
+ * the App Store review failure (Req 2.1.1 "no critical errors" / 2.1.3 "an
+ * interactive UI, not a web 500"). This guard GUARANTEES it never throws: a
+ * provisioning failure is recorded as an operational error state that the app UI
+ * surfaces (Req 2.1.3 explicitly permits operational errors) and every re-auth /
+ * the Connector "Retry" re-runs the idempotent lifecycle.
+ */
+export async function provisionOnInstall(
+  session: ProvisionSession,
+  deps: ProvisionDeps,
+): Promise<ProvisionOutcome> {
+  try {
+    return await runProvisionLifecycle(session, deps);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      // A concurrent install can WIN the race and publish this tenant while our
+      // attempt throws a unique-constraint error at the write boundary — don't
+      // stomp a good `published` state with a bogus `error`.
+      const existing = await deps.getTenant(session.shop);
+      if (existing?.bmaiTenantId) {
+        return {
+          ok: true,
+          tenantId: existing.bmaiTenantId,
+          connectorId: null,
+          calls: [],
+          warnings: [`provisionOnInstall raced; tenant already provisioned: ${message}`],
+        };
+      }
+      await deps.saveTenant(session.shop, {
+        slug: shopToSlug(session.shop),
+        provisionState: "error",
+        provisionError: message.slice(0, 500),
+      });
+    } catch {
+      // Best-effort: even recording the error must not throw out of afterAuth.
+    }
+    return {
+      ok: false,
+      tenantId: null,
+      connectorId: null,
+      error: message,
+      calls: [],
+      warnings: [`provisionOnInstall threw: ${message}`],
+    };
+  }
+}
+
+/**
  * Per-tool access classification for upsert_tenant_support_connector. The READ
  * tiers (public + identified) always register. The DELEGATED write tier registers
  * only when `includeDelegated` (the actor-token verifier is ready) — the bmai
