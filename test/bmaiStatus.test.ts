@@ -20,7 +20,7 @@ describe("/api/bmai/status loader", () => {
     expect(body.actorVerifier).toBe(true);
     expect(body.ok).toBe(true);
     expect(typeof body.audience).toBe("string");
-    expect(body.audience).toBe("https://shopify.busymate.ai");
+    expect(body.audience).toBe("https://store.busymate.ai");
   });
 
   it("actorVerifier is FALSE when the master is unset", async () => {

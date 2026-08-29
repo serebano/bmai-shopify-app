@@ -1,4 +1,7 @@
 name: deploy
+# Release-only: runs on a version tag push or manual dispatch — NEVER on a normal
+# branch push or a pull_request, so day-to-day commits are validated by ci.yml alone
+# and this workflow never needs a secret on an untrusted event.
 on:
   push:
     tags: ["v*"]
@@ -6,19 +9,24 @@ on:
 
 # OWNER-GATED secrets required (repo → Settings → Secrets):
 #   SHOPIFY_CLI_PARTNERS_TOKEN  — for `shopify app deploy` (extension + app config)
-#   DEPLOY_SSH_KEY, DEPLOY_HOST — for the app-server SSH deploy (shopify.busymate.ai)
+#   DEPLOY_SSH_KEY, DEPLOY_HOST — for the app-server SSH deploy (store.busymate.ai)
+# Each step is guarded on its secret's presence: with the secret unset the step is
+# SKIPPED (job stays green), so a fresh fork/clone can tag a release without CI going red.
 jobs:
   shopify-deploy:
     runs-on: ubuntu-latest
+    env:
+      SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - run: npm ci
       # Deploys the theme extension + app config to Shopify (versioned by Shopify).
-      - run: npx shopify app deploy --force
-        env:
-          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+      # Skipped unless SHOPIFY_CLI_PARTNERS_TOKEN is configured.
+      - name: Shopify app deploy
+        if: ${{ env.SHOPIFY_CLI_PARTNERS_TOKEN != '' }}
+        run: npx shopify app deploy --force
 
   app-server-deploy:
     runs-on: ubuntu-latest
@@ -29,5 +37,6 @@ jobs:
       # deploy, restart the systemd unit, verify systemctl is-active. Wire this up
       # with your own DEPLOY_HOST / DEPLOY_SSH_KEY secrets (see deploy/systemd +
       # deploy/nginx for reference unit + vhost). Left as a no-op echo by default.
-      - name: SSH deploy
-        run: echo "TODO: ssh \$DEPLOY_HOST 'cd bmai-shopify-app && git pull --ff-only && npm ci && npm run build && npx prisma migrate deploy && sudo systemctl restart bmai-shopify-app && systemctl is-active bmai-shopify-app'"
+      - name: SSH deploy (placeholder — wire up your own DEPLOY_HOST / DEPLOY_SSH_KEY)
+        run: |
+          echo 'TODO: ssh $DEPLOY_HOST "cd bmai-shopify-app && git pull --ff-only && npm ci && npm run build && npx prisma migrate deploy && sudo systemctl restart bmai-shopify-app && systemctl is-active bmai-shopify-app"'
