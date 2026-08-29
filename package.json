@@ -19,6 +19,8 @@
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "drift-check": "node scripts/drift-check.mjs",
+    "listing:sync": "node scripts/sync-listing-from-db.mjs",
     "prisma": "prisma",
     "setup": "prisma generate && prisma migrate deploy",
     "db:migrate": "prisma migrate deploy"
