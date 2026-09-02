@@ -3,14 +3,15 @@ import {
   matchPlanId,
   normalizeSubscriptionStatus,
   subscriptionStateFromInstallation,
+  subscriptionStateFromPlanHandle,
   subscriptionStateFromWebhook,
 } from "../app/lib/billingSync";
 
 /**
- * B3 — billing status sync. The status normalizer + payload extractors are what
- * make resolveBillingAccess() reflect a REAL subscription (accept/decline/
- * reinstall-re-request all converge). Widget-never-disabled is proven separately in
- * billingGate.test.ts.
+ * Billing status sync — the normalizer + payload extractors that make
+ * resolveBillingAccess() reflect a REAL subscription. Sources (in priority order):
+ * Partner API activeSubscription (partnerApi.test.ts), the App Pricing redirect
+ * `plan_handle`, and the legacy Billing-API webhook / currentAppInstallation.
  */
 describe("subscription status normalization", () => {
   const cases: Array<[string, string]> = [
@@ -32,38 +33,45 @@ describe("subscription status normalization", () => {
 });
 
 describe("plan-id matching", () => {
-  it("matches by id and by display name, else null", () => {
+  it("matches by handle/id and by display name (incl. Free), else null", () => {
     expect(matchPlanId("starter")).toBe("starter");
     expect(matchPlanId("Growth")).toBe("growth");
+    expect(matchPlanId("Free")).toBe("free");
+    expect(matchPlanId("FREE")).toBe("free");
     expect(matchPlanId("Enterprise")).toBeNull();
     expect(matchPlanId(null)).toBeNull();
   });
 });
 
-describe("app_subscriptions/update webhook extraction", () => {
+describe("App Pricing redirect (plan_handle) extraction", () => {
+  it("a known plan_handle ⇒ pending state for that plan (confirmed by the Partner API afterwards)", () => {
+    expect(subscriptionStateFromPlanHandle("growth")).toEqual({ status: "pending", subscriptionId: null, plan: "growth" });
+    expect(subscriptionStateFromPlanHandle("free")).toEqual({ status: "pending", subscriptionId: null, plan: "free" });
+  });
+  it("an unknown/missing plan_handle ⇒ null (nothing to record)", () => {
+    expect(subscriptionStateFromPlanHandle("enterprise")).toBeNull();
+    expect(subscriptionStateFromPlanHandle(null)).toBeNull();
+    expect(subscriptionStateFromPlanHandle("")).toBeNull();
+  });
+});
+
+describe("app_subscriptions/update webhook extraction (legacy Billing API)", () => {
   it("maps status + captures the subscription GID and plan", () => {
     const state = subscriptionStateFromWebhook({
-      app_subscription: {
-        admin_graphql_api_id: "gid://shopify/AppSubscription/99",
-        name: "Growth",
-        status: "ACTIVE",
-      },
+      app_subscription: { admin_graphql_api_id: "gid://shopify/AppSubscription/99", name: "Growth", status: "ACTIVE" },
     });
     expect(state).toEqual({ status: "active", subscriptionId: "gid://shopify/AppSubscription/99", plan: "growth" });
   });
-
   it("a declined subscription becomes inactive", () => {
-    const state = subscriptionStateFromWebhook({ app_subscription: { status: "DECLINED" } });
-    expect(state.status).toBe("inactive");
+    expect(subscriptionStateFromWebhook({ app_subscription: { status: "DECLINED" } }).status).toBe("inactive");
   });
-
   it("a malformed payload fails safe to inactive", () => {
     expect(subscriptionStateFromWebhook({}).status).toBe("inactive");
     expect(subscriptionStateFromWebhook(null).status).toBe("inactive");
   });
 });
 
-describe("currentAppInstallation.activeSubscriptions extraction", () => {
+describe("currentAppInstallation.activeSubscriptions extraction (legacy fallback)", () => {
   it("prefers the ACTIVE subscription", () => {
     const state = subscriptionStateFromInstallation({
       currentAppInstallation: {
@@ -75,7 +83,6 @@ describe("currentAppInstallation.activeSubscriptions extraction", () => {
     });
     expect(state).toEqual({ status: "active", subscriptionId: "gid://shopify/AppSubscription/2", plan: "scale" });
   });
-
   it("no subscriptions ⇒ inactive", () => {
     expect(subscriptionStateFromInstallation({ currentAppInstallation: { activeSubscriptions: [] } })).toEqual({
       status: "inactive",

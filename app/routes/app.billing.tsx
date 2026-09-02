@@ -1,124 +1,252 @@
+import { useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { redirect, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import {
+  Badge,
   Banner,
   BlockStack,
+  Box,
   Button,
   Card,
+  InlineGrid,
+  InlineStack,
   Layout,
-  List,
   Page,
   Text,
 } from "@shopify/polaris";
-import { TitleBar } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import prisma from "../db.server";
-import { PLANS } from "../lib/usageBilling";
+import { PLANS, describePlan, planFor } from "../lib/plans";
 import { managedPricingUrl, resolveBillingAccess } from "../lib/billingGate";
-import { subscriptionStateFromInstallation } from "../lib/billingSync";
-import { syncBillingState } from "../lib/billingState.server";
+import { subscriptionStateFromInstallation, subscriptionStateFromPlanHandle } from "../lib/billingSync";
+import { readBillingState, syncBillingState } from "../lib/billingState.server";
+import { appGidFromEnv, fetchActiveSubscription, subscriptionStateFromPartnerApi } from "../lib/partnerApi";
+import { meterShop } from "../lib/usageBilling";
+import { parseMeterCursor } from "../lib/meterCursor";
 
-// The app handle from shopify.app.toml (`handle = "busymate-ai"`); the managed
-// pricing page lives at /store/<store>/charges/<handle>/pricing_plans.
+// The app handle from shopify.app.toml (`handle = "busymate-ai"`); the App
+// Pricing plan-selection page lives at /store/<store>/charges/<handle>/pricing_plans.
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
+
+type AdminGraphql = (query: string) => Promise<Response>;
+
+/**
+ * Reconcile the LIVE plan state into BillingState (Req 1.2.1/1.2.2):
+ *   1. the App Pricing redirect `plan_handle` (the merchant just picked a plan)
+ *   2. the Partner API activeSubscription (the App Pricing truth — no webhooks)
+ *   3. legacy `currentAppInstallation.activeSubscriptions` (Billing-API contracts)
+ * Non-fatal: any failure leaves the stored state and is reported as `source`.
+ */
+async function reconcile(shop: string, graphql: AdminGraphql, planHandle: string | null) {
+  let chosen: string | null = null;
+  const fromRedirect = subscriptionStateFromPlanHandle(planHandle);
+  if (fromRedirect) {
+    await syncBillingState(shop, fromRedirect);
+    chosen = fromRedirect.plan;
+  }
+  let source: "partner" | "legacy" | "stored" = "stored";
+  let unverified: string | null = null;
+  let trialEndsAt: string | null = null;
+  let usageQuantity: number | null = null;
+  const appGid = appGidFromEnv();
+  try {
+    const shopResp = await graphql(`#graphql
+      query ShopId { shop { id } }`);
+    const shopBody = (await shopResp.json()) as { data?: { shop?: { id?: string } } };
+    const shopGid = shopBody.data?.shop?.id ?? null;
+    if (appGid && shopGid) {
+      const live = await fetchActiveSubscription({ appGid, shopGid });
+      if (live.ok) {
+        const state = subscriptionStateFromPartnerApi(live.subscription);
+        // No contract right after a redirect ⇒ Shopify is still finalizing; keep pending.
+        if (!(state.status === "inactive" && fromRedirect)) await syncBillingState(shop, state);
+        source = "partner";
+        trialEndsAt = state.trialEndsAt;
+        usageQuantity = state.usageQuantity;
+      } else {
+        unverified = live.error;
+      }
+    } else {
+      unverified = appGid ? "shop id unavailable" : "SHOPIFY_APP_ID/SHOPIFY_APP_GID not configured";
+    }
+    if (source !== "partner") {
+      const resp = await graphql(`#graphql
+        query ActiveSubscriptions { currentAppInstallation { activeSubscriptions { id name status } } }`);
+      const body = (await resp.json()) as { data?: unknown };
+      const legacy = subscriptionStateFromInstallation(body.data);
+      if (legacy.status !== "inactive") {
+        await syncBillingState(shop, legacy);
+        source = "legacy";
+      }
+    }
+  } catch (err) {
+    unverified = unverified ?? (err instanceof Error ? err.message : String(err));
+    console.warn(`[billing] reconcile failed shop=${shop}: ${unverified}`);
+  }
+  return { chosen, source, unverified, trialEndsAt, usageQuantity };
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  // Reconcile the LIVE subscription into BillingState so the page (and
-  // resolveBillingAccess) reflect a real plan even without a webhook — this is what
-  // makes accept/decline/reinstall-re-request converge (Req 1.2.2). Non-fatal: on a
-  // query failure we fall back to the stored state and never block the admin page.
-  try {
-    const resp = await admin.graphql(
-      `#graphql
-      query ActiveSubscriptions {
-        currentAppInstallation {
-          activeSubscriptions { id name status }
-        }
-      }`,
-    );
-    const body = (await resp.json()) as { data?: unknown };
-    await syncBillingState(session.shop, subscriptionStateFromInstallation(body.data));
-  } catch (err) {
-    console.warn(
-      `[billing] activeSubscriptions reconcile failed shop=${session.shop}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  const billing = await prisma.billingState.findUnique({ where: { shop: session.shop } });
-  const access = resolveBillingAccess({
-    status: billing?.status,
-    shop: session.shop,
-    appHandle: APP_HANDLE,
-  });
+  const url = new URL(request.url);
+  const planHandle = url.searchParams.get("plan_handle");
+  const r = await reconcile(session.shop, (q) => admin.graphql(q), planHandle);
+  // Opportunistic metering on the merchant's own visit (the timer is the primary trigger).
+  const meter = await meterShop(session.shop).catch((err) => ({ error: err instanceof Error ? err.message : String(err), metered: 0, reportedUnits: 0, capped: false, cursor: null }));
+  const billing = await readBillingState(session.shop);
+  const access = resolveBillingAccess({ status: billing?.status, plan: billing?.plan, shop: session.shop, appHandle: APP_HANDLE });
+  const plan = planFor(access.planId);
+  const cursor = parseMeterCursor(billing?.lastMeteredCursor);
   return {
-    plans: PLANS,
+    plans: PLANS.map((p) => ({ id: p.id, name: p.name, blurb: describePlan(p), current: p.id === access.planId })),
+    planId: access.planId,
+    planName: plan.name,
     status: billing?.status ?? "inactive",
-    cappedAmountCents: billing?.cappedAmountCents ?? 5000,
+    tone: access.tone,
     mustSubscribe: access.mustSubscribe,
+    reason: access.reason,
     pricingUrl: managedPricingUrl(session.shop, APP_HANDLE),
+    chosen: r.chosen ? planFor(r.chosen).name : null,
+    source: r.source,
+    unverified: r.unverified,
+    trialEndsAt: r.trialEndsAt,
+    usage: {
+      included: plan.includedResolutions,
+      cycleResolutions: cursor.cycleResolutions,
+      reportedUnits: r.usageQuantity,
+      capped: meter.capped,
+      meterError: meter.error ?? null,
+    },
   };
 };
 
+/** "Refresh" — re-run the reconcile on demand (e.g. after cancelling in Manage apps). */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // Shopify Billing API only — the App Store forbids an external checkout for app
-  // charges. With **Managed Pricing** the merchant picks a plan on Shopify's
-  // hosted page, so the billing "check + redirect" is: resolve access, and when
-  // there is no active plan, redirect to the managed pricing page.
-  const { session } = await authenticate.admin(request);
-  const billing = await prisma.billingState.findUnique({ where: { shop: session.shop } });
-  const access = resolveBillingAccess({
-    status: billing?.status,
-    shop: session.shop,
-    appHandle: APP_HANDLE,
-  });
-  if (access.mustSubscribe && access.redirectTo) {
-    throw redirect(access.redirectTo);
-  }
-  return { ok: true, status: billing?.status ?? "inactive" };
+  const { admin, session } = await authenticate.admin(request);
+  const r = await reconcile(session.shop, (q) => admin.graphql(q), null);
+  const billing = await readBillingState(session.shop);
+  return { ok: !r.unverified, status: billing?.status ?? "inactive", plan: billing?.plan ?? "free", source: r.source, error: r.unverified };
 };
 
 export default function BillingPage() {
   const data = useLoaderData<typeof loader>();
+  const shopify = useAppBridge();
+  const refresh = useFetcher<typeof action>();
+
+  useEffect(() => {
+    if (data.chosen) shopify.toast.show(`Plan selected: ${data.chosen}`);
+  }, [data.chosen, shopify]);
+  useEffect(() => {
+    if (refresh.state === "idle" && refresh.data) {
+      shopify.toast.show(refresh.data.ok ? "Plan status refreshed" : `Could not verify with Shopify: ${refresh.data.error ?? "unknown"}`, { isError: !refresh.data.ok });
+    }
+  }, [refresh.state, refresh.data, shopify]);
+
+  // Shopify's plan-selection page must be opened top-level (it is an admin page,
+  // not embeddable in the app iframe).
+  const openPricing = () => window.open(data.pricingUrl, "_top");
+  const onFree = data.planId === "free";
+
   return (
     <Page>
       <TitleBar title="Billing" />
       <Layout>
         <Layout.Section>
-          <Card>
-            <BlockStack gap="300">
-              <Text as="h2" variant="headingMd">
-                Pay per resolution — capped, never disabled at cap
-              </Text>
-              <Text as="p" tone="subdued">
-                You are billed only for conversations bro resolves. Your
-                spend cap is a ceiling on charges, not a kill switch — the widget
-                keeps working past the cap. Status: {data.status}.
-              </Text>
-              {data.mustSubscribe ? (
-                <Banner
-                  tone="warning"
-                  title="Choose a plan to start"
-                  action={{ content: "Choose a plan", url: data.pricingUrl, external: true }}
-                >
-                  <p>
-                    Pick a plan on Shopify&apos;s secure pricing page. Your
-                    storefront assistant keeps working either way.
-                  </p>
-                </Banner>
-              ) : (
-                <Button url={data.pricingUrl} external>
-                  Manage plan
-                </Button>
-              )}
-              <List>
-                {data.plans.map((p) => (
-                  <List.Item key={p.id}>
-                    <strong>{p.name}</strong> — {p.blurb}
-                  </List.Item>
-                ))}
-              </List>
-            </BlockStack>
-          </Card>
+          <BlockStack gap="400">
+            {data.tone === "warning" ? (
+              <Banner tone="warning" title="Billing needs attention" action={{ content: "Resolve billing", onAction: openPricing }}>
+                <p>{data.reason}. Your storefront assistant keeps working while you sort it out.</p>
+              </Banner>
+            ) : data.status === "pending" ? (
+              <Banner tone="info" title={`Confirming your ${data.planName} plan with Shopify`}>
+                <p>This usually takes a moment. Refresh if the plan does not update.</p>
+              </Banner>
+            ) : onFree ? (
+              <Banner tone="info" title="You're on the Free plan" action={{ content: "Choose a plan", onAction: openPricing }}>
+                <p>
+                  25 AI resolutions a month, then conversations route to your team. Pick a paid plan on Shopify&apos;s
+                  secure pricing page any time — paid plans start with a 14-day free trial.
+                </p>
+              </Banner>
+            ) : null}
+
+            <Card>
+              <BlockStack gap="300">
+                <InlineGrid columns="1fr auto" alignItems="center">
+                  <Text as="h2" variant="headingMd">
+                    Your plan: {data.planName}
+                  </Text>
+                  <Badge tone={data.status === "active" ? "success" : data.status === "frozen" ? "critical" : "info"}>
+                    {data.status === "active" ? (data.trialEndsAt ? "Trial" : "Active") : data.status}
+                  </Badge>
+                </InlineGrid>
+                <Text as="p" tone="subdued">
+                  {describePlan(planFor(data.planId))}
+                  {data.trialEndsAt ? ` · trial ends ${new Date(data.trialEndsAt).toLocaleDateString()}` : ""}
+                </Text>
+                <Text as="p" tone="subdued">
+                  This billing cycle: {data.usage.cycleResolutions} of {data.usage.included} included resolutions used
+                  {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
+                  {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}.
+                </Text>
+                <InlineStack gap="300">
+                  <Button variant="primary" onClick={openPricing}>
+                    {onFree ? "Choose a plan" : "Manage plan"}
+                  </Button>
+                  <refresh.Form method="post">
+                    <Button submit loading={refresh.state !== "idle"}>
+                      Refresh status
+                    </Button>
+                  </refresh.Form>
+                </InlineStack>
+                <Text as="p" tone="subdued">
+                  All charges are billed through Shopify App Pricing on your Shopify invoice. You can also change or
+                  cancel from Settings → Apps and sales channels in your Shopify admin.
+                </Text>
+                {data.unverified ? (
+                  <Text as="p" tone="caution">
+                    Live plan status could not be verified with Shopify ({data.unverified}); showing the last known
+                    state ({data.source}).
+                  </Text>
+                ) : null}
+                {data.usage.meterError ? (
+                  <Text as="p" tone="subdued">
+                    Usage sync: {data.usage.meterError}.
+                  </Text>
+                ) : null}
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">
+                  Plans
+                </Text>
+                <Text as="p" tone="subdued">
+                  Every plan includes a monthly number of AI resolutions — conversations the assistant resolves without
+                  your team. Paid plans charge per extra resolution up to that plan&apos;s monthly cap; after the cap,
+                  no further overage is charged that month. The storefront assistant is never switched off.
+                </Text>
+                <BlockStack gap="200">
+                  {data.plans.map((p) => (
+                    <Box key={p.id} padding="300" borderWidth="025" borderColor="border" borderRadius="200" background={p.current ? "bg-surface-secondary" : "bg-surface"}>
+                      <InlineGrid columns="1fr auto" alignItems="center">
+                        <BlockStack gap="100">
+                          <Text as="h3" variant="headingSm">
+                            {p.name}
+                          </Text>
+                          <Text as="p" tone="subdued">
+                            {p.blurb}
+                          </Text>
+                        </BlockStack>
+                        {p.current ? <Badge tone="success">Current</Badge> : null}
+                      </InlineGrid>
+                    </Box>
+                  ))}
+                </BlockStack>
+              </BlockStack>
+            </Card>
+          </BlockStack>
         </Layout.Section>
       </Layout>
     </Page>

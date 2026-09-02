@@ -219,3 +219,34 @@ npm run build       # clean SSR build
 
 Nothing above can be produced from a code session — each needs the Partner Dashboard,
 a host, or a Busymate AI credential.
+
+## 11. Shopify App Pricing — plan state, usage metering, legal pages (2026-09) 🔒
+
+The app bills ONLY through **Shopify App Pricing** (Partner Dashboard → Pricing →
+"Update to App Pricing" → enable). Plan handles are `free` / `starter` / `growth` /
+`scale` (== `app/lib/plans.ts`, asserted against `listing/pricing.json` by
+`test/plans.test.ts`); each paid plan carries the usage meter **`ai_resolution`**
+and a redirect URL of **`/app/billing`** (the app reads `?plan_handle=` there).
+
+| Env var (value-blind) | Purpose | Where |
+|---|---|---|
+| `PARTNER_ORG_ID` | Partner organization id (the number in the partners.shopify.com URL) | host env |
+| `PARTNER_API_ACCESS_TOKEN` **or** `PARTNER_API_CLIENT_ID` + `PARTNER_API_CLIENT_SECRET` | Partner API client ("Manage apps" permission) — `activeSubscription` = the plan-state source | host env |
+| `SHOPIFY_APP_ID` (numeric) or `SHOPIFY_APP_GID` | The app's GID for the Partner API query | host env |
+| `SHOPIFY_APP_EVENTS_CLIENT_ID` + `SHOPIFY_APP_EVENTS_CLIENT_SECRET` | Dev Dashboard API key → App Events API (usage billing events) | host env |
+| `BILLING_METER_SECRET` | Shared secret for the `POST /api/billing/meter` timer trigger | host env |
+| `STOREFRONT_ASSISTANT_EXTENSION_UUID` | Optional override of the Shopify-assigned theme-extension UUID used by the theme-editor deep link | host env |
+
+Metering trigger (systemd timer on the host; the secret is read from the env file, never argv):
+
+```
+# /etc/systemd/system/bmai-shopify-meter.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/bmai-shopify-app/env
+ExecStart=/bin/sh -c 'curl -fsS -X POST -H "x-billing-meter-secret: $$BILLING_METER_SECRET" http://127.0.0.1:3970/api/billing/meter'
+# /etc/systemd/system/bmai-shopify-meter.timer  →  OnCalendar=hourly
+```
+
+Legal pages: `docs/legal/{privacy,faq,terms}.md` → `node scripts/render-legal.mjs --out /var/www/bmai-legal`
+(+ an nginx `location = /legal/terms { default_type text/html; alias /var/www/bmai-legal/terms.html; }`).
