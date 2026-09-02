@@ -8,9 +8,10 @@ platform to Busymate AI.** Fork it, extend it, ship your own.
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 Installing this app turns any Shopify store into **one [Busymate AI](https://busymate.ai)
-white-label tenant** — an AI support agent (**bro**): grounded, source-cited answers
-that refuse when unsure · real order actions with confirmation and a spend cap ·
-14 languages · confidence-gated human handoff · honest pay-per-resolution pricing.
+white-label tenant** — an AI support assistant (**bro**): answers only from the store's
+own products, policies and content, with sources, and says when it is not sure ·
+signed-in shoppers get order status, tracking and confirm-gated order actions ·
+replies in the shopper's language (RTL included) · confidence-gated human handoff.
 
 > **Two things at once.** This repository is **both** the real production app running at
 > `shopify.busymate.ai` **and** a MIT-licensed, open reference implementation. If you run

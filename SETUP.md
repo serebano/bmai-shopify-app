@@ -180,9 +180,9 @@ Define the plans in **Partner Dashboard → App pricing → Managed pricing** (m
 
 Done in-repo: the **icon** (`listing/assets/icon-1200.png`), the **14-locale**
 listing translations (`listing/*.json`), and factual-accuracy copy. Still owner-gated:
-screenshots + feature banner + demo video (mp4/H.264) + demo-store reviewer creds, and
-**publishing** the drafted privacy policy + FAQ (`docs/legal/*.md`) at
-`busymate.ai/legal/privacy` + `busymate.ai/shopify/faq` (currently 404 — needs v2 access).
+screenshots + feature banner + demo video (mp4/H.264) + demo-store reviewer creds. The
+privacy policy + FAQ (`docs/legal/*.md`) are published at
+`https://store.busymate.ai/legal/privacy` + `https://store.busymate.ai/legal/faq`.
 
 ## 8. (Optional) List it in the Busymate AI directory
 

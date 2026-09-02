@@ -1,7 +1,7 @@
 <!--
   DRAFT privacy policy for the "Busymate AI for Shopify" app. This is app-specific
-  (NOT the devtools privacy policy). Publish at https://busymate.ai/legal/privacy
-  (the URL in listing/*.json) before App Store submission, and have counsel review.
+  (NOT the devtools privacy policy). Published at https://store.busymate.ai/legal/privacy
+  (the URL in listing/*.json and on the canonical store record); have counsel review.
   Last drafted: 2026-08.
 -->
 

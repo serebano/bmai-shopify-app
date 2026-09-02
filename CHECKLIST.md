@@ -112,13 +112,19 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
   `app/lib/fieldCipher.ts` + `EncryptedSessionStorage`) — makes the PCD attestation
   TRUE; retention windows in `docs/DATA-RETENTION.md`
 - [x] Privacy policy + FAQ **drafted** (`docs/legal/privacy.md` + `faq.md`, app-specific)
-- [ ] 🔒 Publish the privacy policy + FAQ at `busymate.ai/legal/privacy` + `busymate.ai/shopify/faq` (currently 404)
+- [x] Privacy policy + FAQ **published** at `https://store.busymate.ai/legal/privacy` +
+  `https://store.busymate.ai/legal/faq` (the `privacy_url` / `faq_url` in `listing/*.json`
+  and on the canonical store record)
 
 ## Listing
 
 - [x] Localized listing — `listing/en.json` + all **14** Tier-1 locales with real translations
 - [x] **Factual-accuracy copy** (Req 4.3.3): no guarantees/superlatives/competitor-flaw
-  positioning; grounding = "grounded, source-cited, refuses when unsure"
+  positioning; grounding = "answers only from your store content, with sources, and says
+  when it is not sure"
+- [x] **No pricing outside Pricing details, no numerals/statistics in the copy**
+  (Req 4.2.3 / 4.3.3 / 4.4.1) — pinned for all 14 locales by `test/listing-copy.test.ts`;
+  intro + details + privacy_url drift-checked against the canonical record
 - [x] App **icon** (1200×1200, `listing/assets/icon-1200.png`)
 - [ ] 🔒 Screenshots, feature banner, demo video (mp4/H.264), demo store + reviewer creds
 - [ ] **(Optional) List in the Busymate AI directory** over MCP, once the App Store
