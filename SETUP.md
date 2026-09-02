@@ -15,13 +15,14 @@ account and credentials only you can create. This file is the exact checklist to
 
 ## 0. What's already done (no owner action)
 
-- Managed-install OAuth (offline token) + embedded Polaris/App-Bridge admin.
+- Managed-install OAuth with **expiring offline tokens + refresh** (#2110; RR 2.1.0) + embedded Polaris/App-Bridge admin; `/auth/login` never 500s.
 - The 4 admin pages (Home / Assistant settings / Connector & data / Billing).
 - The per-store **Shopify Admin MCP connector** (`/mcp`): JSON-RPC 2.0, pre-auth
   discovery, fail-closed `tools/call`, 4 access tiers, refund cap, confirm gates.
 - The tenant **provisioning lifecycle** (`app/lib/provision.ts`) — injected + tested.
 - **GDPR** `customers/data_request` · `customers/redact` · `shop/redact` — real
-  handlers wired to MCP effects; HMAC verified by `authenticate.webhook`.
+  handlers wired to MCP effects; HMAC verified by `authenticate.webhook`; a shop
+  with no tenant is a 200 no-op ("nothing held"), a real MCP failure still 500s.
 - **Billing** — Managed-Pricing check + redirect; widget never disabled at cap.
 - **Public naming** — merchant copy says "Busymate AI" / "bro"; enforced by
   `test/naming.test.ts`.
@@ -65,6 +66,85 @@ crash) and the admin shows a retry button.
   `npx prisma migrate deploy`.
 
 **Secret → where:** `DATABASE_URL` → app-host env only.
+
+## 3b. Host deploy runbook (production build + migrations)
+
+The host (`busymate-v2-lon1`, dir `/opt/bmai-shopify-app`, owner `deploy`, systemd
+`bmai-shopify-app` → `react-router-serve` on 127.0.0.1:3970, env file
+`/etc/bmai-shopify-app/env`) runs a git clone of `origin`. Every deploy is:
+
+```bash
+cd /opt/bmai-shopify-app
+sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app fetch origin
+sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app checkout <shipped sha>
+sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
+sudo -u deploy npx prisma generate
+sudo -u deploy npx prisma migrate deploy     # additive migrations only (e.g. 20260902120000_session_refresh_token)
+sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
+systemctl restart bmai-shopify-app
+curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
+```
+
+`npm run build` / `npm start` pin `NODE_ENV=production` (the systemd unit sets it too)
+for the app's own env-gated behaviour (`BMAI_ALLOW_HEADER_CALLER` off, no Prisma
+global). Note on the framework itself: `react-router` 7.x ships `dist/development`
+and `dist/production`, but its package `exports` has **no `production` condition** —
+on Node the `node` condition always resolves `dist/development` (and the Vite SSR
+build leaves `react-router` external), so `NODE_ENV` cannot select the production
+dist and stack traces will show `dist/development` paths. That is upstream packaging,
+not a mis-set env. Its one user-visible effect — the framework's default error page
+with developer hints on any unknown route — is removed by the branded root
+`ErrorBoundary` (`app/root.tsx` + `app/lib/routeError.ts`), and `/favicon.ico` +
+`/robots.txt` are now real files under `public/`.
+
+## 3c. Expiring offline access tokens — one-off cycling of pre-upgrade sessions 🔒
+
+Public apps created after 2026-04-01 must use **expiring** offline access tokens;
+Shopify rejects permanent ones (`403 [API] Non-expiring access tokens are no longer
+accepted`) and the Dev Dashboard shows "Deprecated offline token use detected".
+The app runs `@shopify/shopify-app-react-router` 2.1.0 with
+`future.expiringOfflineAccessTokens: true`: new installs mint a ~1h token + a refresh
+token (both encrypted at rest, `Session.refreshToken` / `refreshTokenExpires`), the
+embedded path refreshes inside `authenticate.admin`, and every background Admin call
+(connector tools, KB ingest, billing, metering) goes through
+`unauthenticated.admin(shop)` (`app/mcp/shopifyAdmin.ts`), which refreshes within
+5 minutes of expiry.
+
+The library never replaces an **existing** permanent token on its own (a session
+with `expires = NULL` is "active" forever), so after the first deploy of this code
+cycle the install base once, on the host, as `deploy`, with the env sourced —
+never echo a value:
+
+```bash
+cd /opt/bmai-shopify-app
+sudo -u deploy bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; npm run tokens:cycle -- --dry-run'   # lists candidate shops
+sudo -u deploy bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; npm run tokens:cycle'                # exchanges + stores
+```
+
+`scripts/cycle-offline-tokens.ts` (core `app/lib/cycleOfflineTokens.ts`, unit-tested)
+reads every offline session through the app's encrypting session storage, exchanges
+each permanent token via `api.auth.migrateToExpiringToken`, and stores the expiring
+session under the same id. It prints only shop domains + expiry timestamps and exits
+1 if any shop failed (that shop keeps its old row — re-run, or the merchant simply
+re-opens the app, which re-exchanges). Verify in the app DB (never the platform DB):
+every `Session` row with `isOnline = false` now has `expires` ≈ now + 1h and a
+non-null `refreshTokenExpires`. The Dev Dashboard warning is a trailing-30-day window
+and clears ~30 days after the last deprecated call.
+
+Env var NAMES the script needs: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`,
+`SHOPIFY_APP_URL`, `DATABASE_URL`, `APP_ENCRYPTION_KEY` (+ optional
+`SHOPIFY_API_VERSION`, `SCOPES`).
+
+## 3d. App Proxy (storefront identity) 🔒
+
+`shopify.app.toml` declares `[app_proxy] url = "https://store.busymate.ai"`,
+`subpath = "busymate-ai"`, `prefix = "apps"` so the widget's storefront POST to
+`/apps/busymate-ai/identity` is HMAC-signed by Shopify and proxied to `/identity`
+(`app/routes/identity.tsx`), which turns `logged_in_customer_id` into the
+customer-scoped launch JWT (order-aware answers). `test/appConfig.test.ts` pins the
+proxy path to the extension's `IDENTITY_URL`. **Owner step:** the proxy is app
+configuration — it reaches the app only through `shopify app deploy` (a new app
+version) and `shopify app release`.
 
 ## 4. The Busymate AI provisioning credentials
 
@@ -198,7 +278,7 @@ integrations. Do this only after the App Store listing URL exists.
 npm install && npx prisma generate
 npm run typecheck   # 0 errors
 npm run lint        # 0 errors
-npm test            # 159 passing (20 files)
+npm test            # 204 passing (29 files)
 npm run build       # clean SSR build
 ```
 
@@ -214,7 +294,7 @@ npm run build       # clean SSR build
 | `BMAI_SUPPORT_ACTOR_MASTER` | = Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET` (≥32 B) | app secret store / host env |
 | `BMAI_CONNECTOR_HMAC_SECRET` | *(deprecated — superseded by the master above)* | — |
 | `LAUNCH_SIGNING_KEY` | ES256 PKCS#8 PEM | app secret store |
-| `APP_ENCRYPTION_KEY` | `openssl rand -base64 32` (32-byte at-rest key) | host env / app secret store |
+| `APP_ENCRYPTION_KEY` | `openssl rand -base64 32` (32-byte at-rest key; also encrypts `Session.refreshToken`) | host env / app secret store |
 | `SHOPIFY_APP_HANDLE` | shopify.app.toml handle | env (default `busymate-ai`) |
 
 Nothing above can be produced from a code session — each needs the Partner Dashboard,
