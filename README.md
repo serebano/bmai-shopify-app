@@ -72,7 +72,7 @@ flowchart TB
   end
   subgraph APP["This app — the integration layer"]
     INSTALL["Connect callback → MCP provision lifecycle"]
-    INGEST["Auto-train ingester (catalog + policies → KB)"]
+    INGEST["Auto-train (catalog + policies + pages → knowledge_sources)"]
     CONN["Support MCP connector (/mcp · signed actor token)"]
     IDENT["/identity → ES256 launch JWT + JWKS"]
     METER["Resolution meter → usage charge"]

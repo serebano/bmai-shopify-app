@@ -79,7 +79,7 @@ sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app fetch origin
 sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app checkout <shipped sha>
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
-sudo -u deploy npx prisma migrate deploy     # additive migrations only (e.g. 20260902120000_session_refresh_token)
+sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training)
 sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
 systemctl restart bmai-shopify-app
 curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
@@ -134,6 +134,20 @@ and clears ~30 days after the last deprecated call.
 Env var NAMES the script needs: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`,
 `SHOPIFY_APP_URL`, `DATABASE_URL`, `APP_ENCRYPTION_KEY` (+ optional
 `SHOPIFY_API_VERSION`, `SCOPES`).
+
+## 3c-bis. Grounded knowledge (training) — what runs, what to check
+
+At install (and on every re-auth, reinstall, product webhook, or **Store connection →
+Re-train**) the app reads the store's products, shop policies and pages through the Admin
+API and publishes them as `publish_tenant_runtime.knowledge_sources` (see
+`docs/PROVISIONING.md` step 7–8). The scope list therefore includes
+**`read_legal_policies`** (shop policies) — keep the host `SCOPES` env in sync with
+`shopify.app.toml` (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`),
+and release the new app version so managed installation asks existing stores for the
+added scope on their next app open. Check in the app DB (never the platform DB):
+`ShopTenant.kbTrainedAt` / `kbProducts` / `kbPolicies` / `kbPages` set and `kbError` NULL;
+Home shows "Trained on N products, M policies, K pages". Optional env:
+`KB_REINGEST_DEBOUNCE_MS` (webhook re-train quiet period, default 20000).
 
 ## 3d. App Proxy (storefront identity) 🔒
 
@@ -278,7 +292,7 @@ integrations. Do this only after the App Store listing URL exists.
 npm install && npx prisma generate
 npm run typecheck   # 0 errors
 npm run lint        # 0 errors
-npm test            # 204 passing (29 files)
+npm test            # 407 passing (42 files)
 npm run build       # clean SSR build
 ```
 

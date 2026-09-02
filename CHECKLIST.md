@@ -4,7 +4,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 (shape wired, real impl TODO) · **[ ]** TODO · **🔒** owner-gated.
 
 > This app is **verified-buildable + unit-tested** (`npm run typecheck | lint |
-> test | build` all green — 133 tests / 17 files) with the **Phase-1 code gaps
+> test | build` all green — 407 tests / 42 files) with the **Phase-1 code gaps
 > closed** (real connector tools · delegation flip · billing sync + metering ·
 > at-rest encryption · settings/re-ingest proof shape · API 2026-07 · honest
 > listing copy + 14 locales · icon · privacy/FAQ drafts). The remaining blockers
@@ -30,7 +30,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 - [x] `npm run typecheck` clean (one `@shopify/shopify-api` 14.0.1 dependency; no `overrides`)
 - [x] `npm run lint` clean (typescript-eslint parser wired into the flat config)
-- [x] `npm test` — 133 passing: provisioning seam + delegation flip · proof-of-shop +
+- [x] `npm test` — 407 passing: provisioning seam + delegation flip · proof-of-shop +
   bmai OAuth token · **real connector tools (Admin GraphQL, no TODO stubs)** · GDPR
   dispatch · billing gate + **subscription sync** + **usage metering (cap-clamped)** ·
   **field cipher (at-rest)** · **mgmt call-shape** · App-Proxy HMAC · connector
@@ -82,12 +82,18 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 - [x] `app/uninstalled` → suspend tenant + purge sessions — `webhooks.app.uninstalled.tsx`
 - [x] `app/scopes_update` handled — `webhooks.app.scopes_update.tsx`
 - [x] `app_subscriptions/update` → BillingState sync — `webhooks.app_subscriptions.update.tsx`
-- [x] Product/order KB-freshness webhooks — `webhooks.kb.*.tsx`
+- [x] Product KB-freshness webhook re-trains the tenant (debounced per shop) —
+  `webhooks.kb.products.tsx` → `app/lib/ingest.ts`; order webhooks never re-train
+  (orders are read live through the connector)
+- [x] **Reinstall restores the assistant** — `provision_partner_tenant` reactivates the
+  archived tenant (`reactivated:true`), the lifecycle re-publishes → Home "Live"
+  (`test/provision.test.ts`)
 
 ## API version & scopes
 
 - [x] `api_version = "2026-07"` pinned (toml + admin client + `/api/bmai/status`)
-- [x] Least-privilege scopes declared (`read_products,read_content,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`)
+- [x] Least-privilege scopes declared (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`) —
+  `read_legal_policies` = the store policies the assistant is trained on (`test/appConfig.test.ts` pins the training query to the scopes)
 - [x] Mutation/scope names verified vs 2026-07: refunds `write_orders`/`refundCreate`,
   returns `write_returns`/`returnCreate`, `orderCancel`/`orderUpdate`, `appUsageRecordCreate`
 - [ ] 🔒 `read_all_orders` (>60-day orders) — needs Shopify approval; request at review
@@ -105,6 +111,17 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
   (`appUsageRecordCreate`) respecting `cappedAmountCents` (`test/usageBilling.test.ts`).
   Its trigger (host cron / bmai resolution signal) is the remaining external wiring.
 - [ ] 🔒 Define the Managed Pricing plans in Partners + guarantee accounting decision
+
+## Grounded knowledge (the listing's core claim)
+
+- [x] **Trained at install** — the lifecycle publishes the store's products / policies /
+  pages as `publish_tenant_runtime.knowledge_sources` in the same publish that takes the
+  tenant live (`app/lib/kbSnapshot.ts` + `kbTrain.ts` + `kbFetch.ts`; deterministic,
+  within the platform limits; `test/kbSnapshot.test.ts`, `test/kbTrain.test.ts`)
+- [x] **Visible training state** — Home + Store connection show "Trained on N products,
+  M policies, K pages · last trained …" or the error; **Re-train on my store** runs it
+  synchronously and reports the counts (`ShopTenant.kb*`, `test/prismaTrainingSchema.test.ts`)
+- [x] Ingest errors are persisted + surfaced, never swallowed
 
 ## Storefront & performance
 
