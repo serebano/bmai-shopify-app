@@ -5,9 +5,15 @@
  * (`/store/<store>/charges/<handle>/pricing_plans`); the app never renders its
  * own charge UI — it reads the contract state (Partner API) and links there.
  *
- * FREE IS A PLAN: no contract ⇒ the merchant is on the Free plan. That is an
- * INFO notice ("change plan any time"), NOT a permanent warning — a merchant
- * (or a reviewer) who never picks a paid plan must not be nagged.
+ * FREE IS A PLAN — and it is SELECTED on Shopify: under App Pricing the $0
+ * Free plan creates a real subscription contract (Partner API `activeSubscription`
+ * item handle "free"; it shows under the merchant's Manage apps → Billing).
+ * NO contract means the merchant has NOT selected a plan yet (Manage apps says
+ * "No plan selected"), so the app must say the same — Free-plan LIMITS apply
+ * meanwhile, but it must never claim "You're on the Free plan" (#2132 D: the
+ * reviewer saw the app say Free while Shopify said no plan). Either way it is an
+ * INFO notice, NOT a permanent warning — a merchant (or a reviewer) who never
+ * picks a paid plan must not be nagged.
  *
  * THE INVARIANT (Built-for-Shopify + owner rule): the storefront widget is NEVER
  * disabled — not on Free, not at the cap, not when frozen. `widgetEnabled()` is
@@ -29,8 +35,10 @@ export interface BillingAccess {
   mustSubscribe: boolean;
   /** The plan-selection page (where "Choose/Manage plan" navigates top-level). */
   redirectTo: string;
-  /** The effective plan (Free when there is no contract). */
+  /** The effective plan (Free-plan LIMITS when there is no contract). */
   planId: PlanId;
+  /** Is there an App Pricing contract on Shopify (incl. the $0 Free plan)? false = "No plan selected". */
+  planSelected: boolean;
   tone: BillingTone;
   reason: string;
 }
@@ -44,7 +52,7 @@ export function managedPricingUrl(shop: string, appHandle: string): string {
 
 /**
  * Resolve the merchant-facing billing notice from the stored subscription state.
- *   inactive / cancelled / unknown ⇒ Free (info)
+ *   inactive / cancelled / unknown ⇒ NO plan selected — Free limits (info)
  *   pending                       ⇒ the chosen plan, info (confirming with Shopify)
  *   active                        ⇒ the plan; Free handle ⇒ info, paid ⇒ no notice
  *   frozen                        ⇒ warning — resolve billing (widget still on)
@@ -63,15 +71,15 @@ export function resolveBillingAccess(input: {
     case "active": {
       const planId = matched ?? FREE_PLAN_ID;
       return planId === FREE_PLAN_ID
-        ? { ...base, mustSubscribe: false, planId, tone: "info", reason: "Free plan" }
-        : { ...base, mustSubscribe: false, planId, tone: "none", reason: "active subscription" };
+        ? { ...base, mustSubscribe: false, planId, planSelected: true, tone: "info", reason: "Free plan" }
+        : { ...base, mustSubscribe: false, planId, planSelected: true, tone: "none", reason: "active subscription" };
     }
     case "pending":
-      return { ...base, mustSubscribe: false, planId: matched ?? FREE_PLAN_ID, tone: "info", reason: "plan selection pending confirmation" };
+      return { ...base, mustSubscribe: false, planId: matched ?? FREE_PLAN_ID, planSelected: true, tone: "info", reason: "plan selection pending confirmation" };
     case "frozen":
-      return { ...base, mustSubscribe: true, planId: matched ?? FREE_PLAN_ID, tone: "warning", reason: "billing frozen — resolve to keep your plan" };
+      return { ...base, mustSubscribe: true, planId: matched ?? FREE_PLAN_ID, planSelected: true, tone: "warning", reason: "billing frozen — resolve to keep your plan" };
     default:
-      return { ...base, mustSubscribe: false, planId: FREE_PLAN_ID, tone: "info", reason: "no subscription — Free plan" };
+      return { ...base, mustSubscribe: false, planId: FREE_PLAN_ID, planSelected: false, tone: "info", reason: "no plan selected — Free-plan limits apply" };
   }
 }
 
