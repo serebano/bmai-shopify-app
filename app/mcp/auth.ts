@@ -108,7 +108,11 @@ export async function resolveCaller(
       return {
         shop,
         customerId: claims.sub,
-        confirmed: request.headers.get("x-bmai-confirmed") === "1",
+        // #2132: the platform signals a released confirm gate INSIDE the signed
+        // actor token (`confirmed: true`), not via a header — before this, every
+        // confirm-gated write (cancel_order, create_refund, …) answered
+        // "Confirmation required" even after the customer approved it in chat.
+        confirmed: claims.confirmed || request.headers.get("x-bmai-confirmed") === "1",
         actor: "bmai",
       };
     }

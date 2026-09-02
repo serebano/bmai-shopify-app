@@ -55,6 +55,13 @@ export interface ActorClaims {
   jti: string;
   tenantId: string;
   connectorId: string;
+  /**
+   * #2132 — the platform's SIGNED confirmation: Busymate AI mints `confirmed: true`
+   * only for a confirm-gated call the customer released through the approval card
+   * (v2 `createSupportActorToken` → `confirmed: supportAccess.confirm`). This is the
+   * confirm acknowledgement for the actor-token path; a bare header is never enough.
+   */
+  confirmed: boolean;
 }
 
 export interface VerifyActorTokenOptions {
@@ -201,5 +208,5 @@ export function verifyActorToken(token: string, opts: VerifyActorTokenOptions): 
     return null;
   }
 
-  return { sub, supportSessionId, jti, tenantId, connectorId };
+  return { sub, supportSessionId, jti, tenantId, connectorId, confirmed: payload.confirmed === true };
 }
