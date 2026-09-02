@@ -13,9 +13,12 @@ describe("billing gate", () => {
     expect(managedPricingUrl(shop, appHandle)).toBe("https://admin.shopify.com/store/acme/charges/busymate-ai/pricing_plans");
   });
 
-  it("no subscription ⇒ the Free plan: allowed, an INFO notice, no must-subscribe warning", () => {
+  it("no subscription ⇒ NO PLAN SELECTED (Free-plan limits): allowed, an INFO notice, no must-subscribe warning (#2132 D)", () => {
     const a = resolveBillingAccess({ status: "inactive", plan: null, shop, appHandle });
-    expect(a).toMatchObject({ allowed: true, mustSubscribe: false, planId: "free", tone: "info" });
+    expect(a).toMatchObject({ allowed: true, mustSubscribe: false, planId: "free", planSelected: false, tone: "info" });
+    // Shopify's Manage apps says "No plan selected" for a shop with no contract — the app says the same, never "on the Free plan".
+    expect(a.reason).toMatch(/no plan selected/i);
+    expect(a.reason).not.toMatch(/^Free plan$/);
     expect(a.redirectTo).toBe(managedPricingUrl(shop, appHandle)); // where "Choose a plan" goes
   });
 
@@ -28,6 +31,11 @@ describe("billing gate", () => {
   it("an active paid plan is allowed with no notice and the matched plan id", () => {
     const a = resolveBillingAccess({ status: "active", plan: "growth", shop, appHandle });
     expect(a).toMatchObject({ allowed: true, mustSubscribe: false, planId: "growth", tone: "none" });
+  });
+
+  it("a SELECTED $0 Free plan is a real App Pricing contract (Partner API item handle 'free') ⇒ planSelected true (#2132 D)", () => {
+    const a = resolveBillingAccess({ status: "active", plan: "free", shop, appHandle });
+    expect(a).toMatchObject({ planId: "free", planSelected: true, tone: "info", reason: "Free plan" });
   });
 
   it("an active contract on the Free plan handle is Free (info), not a paid plan", () => {

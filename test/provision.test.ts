@@ -477,6 +477,36 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect(states.at(-1)).toMatchObject({ provisionState: "published", bmaiTenantId: "t_old", provisionError: null, kbProducts: 1 });
   });
 
+  it("#2132 C — REINSTALL / re-run of an EXISTING tenant NEVER re-seeds the default branding (the merchant's saved names survive)", async () => {
+    const call = vi.fn(async (name: string) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_old", created: false, reactivated: true } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    deps.getTenant = async () => ({ bmaiTenantId: "t_old", customDomain: null, connectorId: "c_old", provisionState: "suspended" });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.calls).not.toContain("set_tenant_branding");
+    // …and the same for a plain re-run (Connector "Retry"/re-auth) of a live tenant.
+    const rerun = vi.fn(async (name: string) => (name === "provision_partner_tenant" ? { ok: true, data: { tenant_id: "t_live", created: false } } : { ok: true }));
+    const again = makeDeps(rerun as unknown as ProvisionDeps["call"]);
+    again.deps.getTenant = async () => ({ bmaiTenantId: "t_live", customDomain: null, provisionState: "published" });
+    expect((await runProvisionLifecycle(session, again.deps)).calls).not.toContain("set_tenant_branding");
+  });
+
+  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'bro')", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_new", created: true } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.calls).toContain("set_tenant_branding");
+    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "bro" }, confirm: true });
+  });
+
   it("without a buildKnowledge dep (ops verify script) the lifecycle publishes with no knowledge and records no training", async () => {
     const seen: Record<string, Record<string, unknown>> = {};
     const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {

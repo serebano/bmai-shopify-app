@@ -198,7 +198,14 @@ export async function runProvisionLifecycle(
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
   //    provisioner needs NO platform-operator role; #1982 security follow-up #5).
-  await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: "bro" }));
+  //    ONLY for a NEW tenant: a reinstall / Connector re-run / re-auth of an existing
+  //    tenant must NEVER overwrite the merchant's saved names with the defaults
+  //    (#2132 C — the review store's rename was wiped by the reinstall). The publish
+  //    below re-reads the tenant row, so an existing tenant keeps its branding.
+  const isNewTenant = provisioned.data?.created === true || (!existing?.bmaiTenantId && provisioned.data?.reactivated !== true);
+  if (isNewTenant) {
+    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: "bro" }));
+  }
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).
   await soft("add_tenant_embed_origin", { ...proofArgs(proof), origins: storefrontOrigins, confirm: true });

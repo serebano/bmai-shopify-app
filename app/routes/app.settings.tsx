@@ -16,6 +16,8 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
+import { retrainNow } from "../lib/ingest";
+import { saveBrandingAndRepublish } from "../lib/brandingSave";
 import { readTenantBranding } from "../lib/tenantRead.server";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
@@ -62,14 +64,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-  const assistantName = String(form.get("assistantName") ?? "").trim();
-  const productName = String(form.get("displayName") ?? "").trim();
-  if (!assistantName || !productName) return { ok: false, error: "Both names are required." };
-  if (assistantName.length > 40 || productName.length > 80) return { ok: false, error: "Names are too long (40 / 80 characters)." };
-  // set_tenant_branding via MCP (no backdoor), routed through the SAME proof-signed
-  // `branding:{…}` + confirm shape the provisioning lifecycle uses.
-  const res = await setTenantBranding(session.shop, tenant?.bmaiTenantId, { productName, assistantName });
-  return { ok: res.ok, error: res.error ?? null };
+  const assistantName = String(form.get("assistantName") ?? "");
+  const productName = String(form.get("displayName") ?? "");
+  // #2132 C: set_tenant_branding via MCP (no backdoor) AND re-publish the runtime —
+  // the storefront widget renders the PUBLISHED revision (brand synthesized from
+  // the tenant row at publish time), so a save that does not publish never
+  // reaches shoppers. The re-publish is the training publish (origins +
+  // knowledge_sources); a failed publish is reported, never a silent green.
+  const res = await saveBrandingAndRepublish(
+    session.shop,
+    tenant?.bmaiTenantId,
+    { productName, assistantName },
+    { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: retrainNow },
+  );
+  return { ok: res.ok, error: res.error, published: res.published };
 };
 
 export default function SettingsPage() {
@@ -82,7 +90,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
-      if (fetcher.data.ok) shopify.toast.show("Assistant settings saved");
+      if (fetcher.data.ok) shopify.toast.show("Assistant settings saved and published to your storefront");
       else shopify.toast.show(fetcher.data.error ?? "Could not save", { isError: true });
     }
   }, [fetcher.state, fetcher.data, shopify]);

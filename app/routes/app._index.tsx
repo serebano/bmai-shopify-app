@@ -64,9 +64,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     truncated: training.truncated,
     planId: access.planId,
     hasSubscription: tenant?.billing?.status === "active" || tenant?.billing?.status === "pending",
+    planSelected: access.planSelected,
   });
   return {
     shop,
+    planSelected: access.planSelected,
     servingHost: `${slug}.busymate.ai`,
     provisionState,
     provisionError: tenant?.provisionError ?? null,
@@ -261,11 +263,20 @@ export default function Index() {
                   Billing
                 </Text>
                 <Text as="p" tone="subdued">
-                  You&apos;re on the <strong>{data.planName}</strong> plan. Plans include a monthly number of AI resolutions;
-                  paid plans charge per extra resolution up to a monthly cap. The assistant is never switched off for
-                  billing.
+                  {data.planSelected ? (
+                    <>
+                      You&apos;re on the <strong>{data.planName}</strong> plan.
+                    </>
+                  ) : (
+                    <>
+                      <strong>No plan selected yet</strong> — choose the $0 Free plan or a paid plan on Shopify&apos;s pricing
+                      page; Free-plan limits apply until you do.
+                    </>
+                  )}{" "}
+                  Plans include a monthly number of AI resolutions; paid plans charge per extra resolution up to a monthly
+                  cap. The assistant is never switched off for billing.
                 </Text>
-                <Link url="/app/billing">Manage plan</Link>
+                <Link url="/app/billing">{data.planSelected ? "Manage plan" : "Choose a plan"}</Link>
               </BlockStack>
             </Card>
           </BlockStack>

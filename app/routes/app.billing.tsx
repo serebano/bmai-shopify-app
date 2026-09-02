@@ -112,6 +112,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     status: billing?.status ?? "inactive",
     tone: access.tone,
     mustSubscribe: access.mustSubscribe,
+    planSelected: access.planSelected,
     reason: access.reason,
     pricingUrl: managedPricingUrl(session.shop, APP_HANDLE),
     chosen: r.chosen ? planFor(r.chosen).name : null,
@@ -154,6 +155,10 @@ export default function BillingPage() {
   // not embeddable in the app iframe).
   const openPricing = () => window.open(data.pricingUrl, "_top");
   const onFree = data.planId === "free";
+  // No App Pricing contract on Shopify ⇒ the merchant has not selected a plan yet
+  // (Shopify's Manage apps says "No plan selected"; the $0 Free plan is a real
+  // contract once selected). Say exactly that — never "You're on the Free plan".
+  const noPlan = !data.planSelected;
 
   return (
     <Page>
@@ -169,6 +174,15 @@ export default function BillingPage() {
               <Banner tone="info" title={`Confirming your ${data.planName} plan with Shopify`}>
                 <p>This usually takes a moment. Refresh if the plan does not update.</p>
               </Banner>
+            ) : noPlan ? (
+              <Banner tone="info" title="No plan selected yet" action={{ content: "Choose a plan", onAction: openPricing }}>
+                <p>
+                  Pick a plan on Shopify&apos;s secure pricing page — the Free plan is $0 and takes one click; paid plans
+                  start with a 14-day free trial. Your selection then shows in your Shopify admin under Settings → Apps
+                  and sales channels → Busymate AI → Billing. Until you choose, the assistant works at Free-plan limits (25
+                  AI resolutions a month, then conversations route to your team).
+                </p>
+              </Banner>
             ) : onFree ? (
               <Banner tone="info" title="You're on the Free plan" action={{ content: "Choose a plan", onAction: openPricing }}>
                 <p>
@@ -182,10 +196,10 @@ export default function BillingPage() {
               <BlockStack gap="300">
                 <InlineGrid columns="1fr auto" alignItems="center">
                   <Text as="h2" variant="headingMd">
-                    Your plan: {data.planName}
+                    {noPlan ? "Your plan: none selected (Free-plan limits)" : `Your plan: ${data.planName}`}
                   </Text>
                   <Badge tone={data.status === "active" ? "success" : data.status === "frozen" ? "critical" : "info"}>
-                    {data.status === "active" ? (data.trialEndsAt ? "Trial" : "Active") : data.status}
+                    {data.status === "active" ? (data.trialEndsAt ? "Trial" : "Active") : noPlan ? "No plan selected" : data.status}
                   </Badge>
                 </InlineGrid>
                 <Text as="p" tone="subdued">
@@ -204,7 +218,7 @@ export default function BillingPage() {
                 </Text>
                 <InlineStack gap="300">
                   <Button variant="primary" onClick={openPricing}>
-                    {onFree ? "Choose a plan" : "Manage plan"}
+                    {noPlan || onFree ? "Choose a plan" : "Manage plan"}
                   </Button>
                   <refresh.Form method="post">
                     <Button submit loading={refresh.state !== "idle"}>

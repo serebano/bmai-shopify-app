@@ -97,6 +97,8 @@ export interface SetupInput {
   truncated?: boolean | null;
   planId: string | null;
   hasSubscription: boolean;
+  /** An App Pricing contract exists on Shopify (incl. the $0 Free plan); false = "No plan selected". */
+  planSelected?: boolean;
 }
 
 /** "62 of 250 products, 3 policies, 4 pages" — the honest training summary. */
@@ -178,8 +180,11 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
       title: "Plan",
       detail: paid
         ? `You're on the ${s.planId!.charAt(0).toUpperCase() + s.planId!.slice(1)} plan.`
-        : "You're on the Free plan — 25 resolutions a month, then conversations route to your team. Change plan any time.",
-      done: true,
+        : s.planSelected === false
+          ? "No plan selected yet — choose the $0 Free plan or a paid plan on Shopify's pricing page (Billing → Choose a plan). Free-plan limits apply until you do."
+          : "You're on the Free plan — 25 resolutions a month, then conversations route to your team. Change plan any time.",
+      // Selecting a plan is a one-click step the reviewer/merchant must take on Shopify.
+      done: s.planSelected !== false,
       failed: false,
     },
   ];
