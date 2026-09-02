@@ -196,3 +196,30 @@ tab, a bookmark, a reviewer opening the app URL directly) ended there.
 points at the App Store listing — no manual `myshopify.com` entry, Req 2.3.1). Never a
 `500`. Test: `test/authLogin.test.ts`; live gate: `curl -A "<Chrome UA>" -o /dev/null -w
 '%{http_code}' https://store.busymate.ai/auth/login` → `302`.
+
+## In-app navigation (Polaris links inside the admin iframe)
+
+Found live on 2026-09-02 after the busymate-ai-5 release, before resubmission: the
+Home page's "Manage store connection" / "Re-train" / "Manage plan" links (Polaris
+`<Link url>`) navigated the admin iframe to a **bare** app URL (no `host` / `shop` /
+`embedded` / `id_token`). The embedded auth cannot serve such a document request, so
+the merchant landed on the branded error page — a reviewer clicking through the
+setup checklist would have hit it (Req 2.1.3).
+
+Root cause: `@shopify/shopify-app-react-router` 2.x's `AppProvider` no longer provides
+Polaris React context (it injects App Bridge + Polaris web components and routes
+`shopify:navigate` events, which plain anchors never dispatch), so the nested Polaris
+`AppProvider` must carry a router-aware `linkComponent`. Fix: `app/components/PolarisLink.tsx`
+— internal paths render a React Router `<Link>` (client-side, session-token data
+requests); absolute URLs, `external` and an explicit `target` (the theme-editor deep
+link's `_top`) stay real anchors. Tests: `test/polarisLink.test.ts` (rendered markup +
+the `app.tsx` wiring).
+
+## Existing installs learn new scopes (app/scopes_update)
+
+A scope grant (the `read_legal_policies` added for training) keeps the existing
+offline session — no token exchange, no `afterAuth`, so the install lifecycle and
+its training do not re-run on their own. The `app/scopes_update` webhook now records
+the new scope set on the session **and queues a debounced re-train**
+(`app/lib/scopesUpdate.ts`, `test/scopesUpdate.test.ts`), so every existing store is
+trained as soon as its merchant approves the new version's permissions.

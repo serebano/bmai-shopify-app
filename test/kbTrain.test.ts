@@ -156,3 +156,13 @@ describe("createReingestScheduler (webhook debounce)", () => {
     }
   });
 });
+
+describe("createReingestScheduler — scope grants", () => {
+  it("a scopes_update re-trains like a product change (new scopes = newly readable knowledge)", async () => {
+    const runs: string[] = [];
+    const s = createReingestScheduler({ run: async (shop) => { runs.push(shop); }, delayMs: 5 });
+    expect(s.schedule("s.myshopify.com", "scopes")).toEqual({ scheduled: true });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(runs).toEqual(["s.myshopify.com"]);
+  });
+});
