@@ -6,34 +6,36 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=20.10 <23"
+    "node": ">=22"
   },
   "scripts": {
-    "build": "react-router build",
+    "build": "NODE_ENV=production react-router build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "config:push": "shopify app config push",
     "deploy": "shopify app deploy",
-    "start": "react-router-serve ./build/server/index.js",
+    "start": "NODE_ENV=production react-router-serve ./build/server/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "drift-check": "node scripts/drift-check.mjs",
     "listing:sync": "node scripts/sync-listing-from-db.mjs",
+    "tokens:cycle": "tsx scripts/cycle-offline-tokens.ts",
     "prisma": "prisma",
     "setup": "prisma generate && prisma migrate deploy",
     "db:migrate": "prisma migrate deploy"
   },
   "dependencies": {
-    "@prisma/client": "^6.2.1",
+    "@prisma/client": "^6.19.0",
     "@react-router/fs-routes": "^7.1.1",
     "@react-router/node": "^7.1.1",
     "@react-router/serve": "^7.1.1",
     "@shopify/app-bridge-react": "^4.1.6",
     "@shopify/polaris": "^13.9.0",
-    "@shopify/shopify-app-react-router": "^0.2.0",
-    "@shopify/shopify-app-session-storage-prisma": "^6.0.0",
+    "@shopify/shopify-api": "14.0.1",
+    "@shopify/shopify-app-react-router": "2.1.0",
+    "@shopify/shopify-app-session-storage-prisma": "10.0.1",
     "isbot": "^5.1.0",
     "jose": "^5.9.6",
     "react": "^18.3.1",
@@ -48,7 +50,8 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "eslint": "^9.17.0",
-    "prisma": "^6.2.1",
+    "prisma": "^6.19.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.68.0",
     "vite": "^6.0.7",
@@ -60,8 +63,5 @@
   ],
   "trustedDependencies": [
     "@shopify/plugin-cloudflare"
-  ],
-  "overrides": {
-    "@shopify/shopify-api": "12.3.0"
-  }
+  ]
 }

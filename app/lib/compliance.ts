@@ -11,6 +11,10 @@
  *   - customers/redact       → erase that customer's data (idempotent).
  *   - shop/redact            → 48h after uninstall: tear the whole tenant down.
  *
+ * A shop with NO provisioned tenant holds nothing (#2110): the two customer
+ * topics are then a successful no-op ("nothing held") — a 500 there only made
+ * Shopify retry for 48h and counted as webhook failures during review. A real
+ * MCP failure on a provisioned tenant still surfaces as ok:false → 500 → retry.
  */
 export type ComplianceTopic =
   | "CUSTOMERS_DATA_REQUEST"
@@ -23,6 +27,8 @@ export interface ComplianceSubject {
 }
 
 export interface ComplianceDeps {
+  /** Does the shop have a provisioned tenant at all (i.e. could anything be held)? */
+  hasTenant: (shop: string) => Promise<boolean>;
   /** Assemble + deliver the customer's held data (via MCP tenant read). */
   exportCustomerData: (shop: string, customerId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Erase the customer's transcripts/PII from the tenant KB (idempotent, via MCP). */
@@ -36,6 +42,8 @@ export interface ComplianceOutcome {
   action: "export" | "redact_customer" | "redact_shop" | "noop";
   ok: boolean;
   error?: string;
+  /** Set when the request was satisfied without an effect (nothing to act on). */
+  noop?: string;
 }
 
 export async function handleComplianceTopic(
@@ -45,12 +53,18 @@ export async function handleComplianceTopic(
 ): Promise<ComplianceOutcome> {
   switch (topic as ComplianceTopic) {
     case "CUSTOMERS_DATA_REQUEST": {
-      if (!subject.customerId) return { handled: true, action: "export", ok: true };
+      if (!subject.customerId) return { handled: true, action: "export", ok: true, noop: "no customer id" };
+      if (!(await deps.hasTenant(subject.shop))) {
+        return { handled: true, action: "export", ok: true, noop: "nothing held" };
+      }
       const r = await deps.exportCustomerData(subject.shop, subject.customerId);
       return { handled: true, action: "export", ok: r.ok, error: r.error };
     }
     case "CUSTOMERS_REDACT": {
-      if (!subject.customerId) return { handled: true, action: "redact_customer", ok: true };
+      if (!subject.customerId) return { handled: true, action: "redact_customer", ok: true, noop: "no customer id" };
+      if (!(await deps.hasTenant(subject.shop))) {
+        return { handled: true, action: "redact_customer", ok: true, noop: "nothing held" };
+      }
       const r = await deps.redactCustomer(subject.shop, subject.customerId);
       return { handled: true, action: "redact_customer", ok: r.ok, error: r.error };
     }
