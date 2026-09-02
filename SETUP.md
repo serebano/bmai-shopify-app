@@ -68,35 +68,28 @@ crash) and the admin shows a retry button.
 
 ## 4. The Busymate AI provisioning credentials
 
-The app drives the tenant lifecycle **only via MCP**, across **TWO surfaces** (the
-no-mix rule; same Supabase OAuth backend, but each is a separate RFC-8707
-resource so a token for one is rejected on the other):
+The app drives the tenant lifecycle **only via the standalone Busymate AI MCP**:
 
-- **`mcp.busymate.dev`** — the **proof-of-shop PARTNER** tools:
+- **`busymate.ai/mcp`** — proof-of-shop lifecycle plus tenant management:
   `provision_partner_tenant`, `add_tenant_embed_origin`, `get_tenant_usage`,
   `suspend_tenant`, `delete_tenant`, `export/redact_tenant_customer`. Authorized by an
   HMAC **proof-of-shop** (`app/lib/partnerProof.ts`, `BMAI_PARTNER_PROOF_SECRET` ==
   the Busymate AI platform's `SHOPIFY_PARTNER_HMAC`) — no operator needed. `set_tenant_domain` is
   NOT used: the tenant serves at the derived slug lane `<slug>.busymate.ai`.
-- **`busymate.ai/mcp`** — the **tenant-MANAGEMENT** tools:
-  `set_tenant_branding`, `upsert_tenant_support_connector`, `publish_tenant_runtime`.
+  The same surface serves `set_tenant_branding`, `upsert_tenant_support_connector`,
+  and `publish_tenant_runtime`.
 
-`app/bmai.server.ts` routes each tool to its host and picks the matching credential.
+Busymate DevTools is a separate product and is never part of this lifecycle.
 
-### Two durable credentials (rotating OAuth refresh tokens) + the operator grant
+### One durable credential (rotating OAuth refresh token) + the operator grant
 
-MCP access tokens are 1h, so each surface uses a rotating **OAuth refresh token**
-(DCR + PKCE) for the SAME dedicated provisioner identity, bound to that host's
-resource. Mint BOTH with `scripts/mint-provision-credential.mjs` (needs `SUPABASE_URL`
+MCP access tokens are 1h, so the app uses one rotating **OAuth refresh token**
+(DCR + PKCE) for a dedicated provisioner identity, bound to the Busymate AI
+resource. Mint it with `scripts/mint-provision-credential.mjs` (needs `SUPABASE_URL`
 + `SUPABASE_SERVICE_ROLE_KEY`):
 
 ```
-# partner surface (mcp.busymate.dev resource) — default
-node scripts/mint-provision-credential.mjs                     # → BMAI_PROVISION_*
-# management surface (busymate.ai/mcp resource)
-ISSUER=https://busymate.ai/mcp RESOURCE=https://busymate.ai/mcp \
-  VAR_PREFIX=BMAI_MGMT OAUTH_ORIGIN=https://busymate.ai \
-  node scripts/mint-provision-credential.mjs                   # → BMAI_MGMT_*
+node scripts/mint-provision-credential.mjs  # → BMAI_MGMT_*
 ```
 
 `app/lib/bmaiToken.ts` mints access tokens, caches until near-expiry, and PERSISTS
@@ -109,10 +102,9 @@ partner provisioner (homed once, `is_default=false` per shop) can't be current-t
 for every shop, so it needs operator. This is a broad,
 revocable grant — see the least-privilege follow-up below.
 
-**Env → app host (value-blind):** `BMAI_PARTNER_PROOF_SECRET`,
-`BMAI_PROVISION_CLIENT_ID`/`BMAI_PROVISION_REFRESH_TOKEN` (partner surface),
-`BMAI_MGMT_CLIENT_ID`/`BMAI_MGMT_REFRESH_TOKEN` (management surface). Optional static bootstrap
-`BMAI_PROVISION_TOKEN`/`BMAI_MGMT_TOKEN`. Without a credential the lifecycle
+**Env → app host (value-blind):** `BMAI_PARTNER_PROOF_SECRET` and
+`BMAI_MGMT_CLIENT_ID`/`BMAI_MGMT_REFRESH_TOKEN`. Optional static bootstrap
+`BMAI_MGMT_TOKEN`. Without a credential the lifecycle
 fails closed.
 
 ### Verified end-to-end ✅
@@ -206,7 +198,7 @@ integrations. Do this only after the App Store listing URL exists.
 npm install && npx prisma generate
 npm run typecheck   # 0 errors
 npm run lint        # 0 errors
-npm test            # 133 passing (17 files)
+npm test            # 159 passing (20 files)
 npm run build       # clean SSR build
 ```
 
@@ -217,8 +209,8 @@ npm run build       # clean SSR build
 | `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | Partner app | `.env` + host env |
 | `DATABASE_URL` | app's own Postgres | host env |
 | `BMAI_PARTNER_PROOF_SECRET` | == the Busymate AI platform's `SHOPIFY_PARTNER_HMAC` | host env |
-| `BMAI_PROVISION_CLIENT_ID` / `BMAI_PROVISION_REFRESH_TOKEN` | `scripts/mint-provision-credential.mjs` (DCR+PKCE) | host env |
-| `BMAI_PROVISION_TOKEN` | optional static bootstrap access token | app secret store |
+| `BMAI_MGMT_CLIENT_ID` / `BMAI_MGMT_REFRESH_TOKEN` | `scripts/mint-provision-credential.mjs` (DCR+PKCE, resource `busymate.ai/mcp`) | host env |
+| `BMAI_MGMT_TOKEN` | optional static bootstrap access token | app secret store |
 | `BMAI_SUPPORT_ACTOR_MASTER` | = Busymate AI's `V2_SUPPORT_ACTOR_TOKEN_SECRET` (≥32 B) | app secret store / host env |
 | `BMAI_CONNECTOR_HMAC_SECRET` | *(deprecated — superseded by the master above)* | — |
 | `LAUNCH_SIGNING_KEY` | ES256 PKCS#8 PEM | app secret store |

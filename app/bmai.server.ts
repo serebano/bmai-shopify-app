@@ -28,31 +28,13 @@ import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
+import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 
-// Two MCP surfaces, split by the no-mix rule + one shared Supabase OAuth
-// backend (the SAME access token authenticates on both):
-//   • mcp.busymate.dev (busymate-devtools) — the proof-of-shop PARTNER tools
-//     (provision_partner_tenant, add_tenant_embed_origin, get_tenant_usage,
-//     suspend_tenant, delete_tenant, export/redact GDPR). Also the OAuth issuer.
-//   • busymate.ai/mcp (busymate-ai) — the bmai tenant-MANAGEMENT tools
-//     (set_tenant_branding, add_tenant_admin, upsert_tenant_support_connector,
-//     publish_tenant_runtime). Excluded from the devtools host by design.
-const MCP_URL = process.env.BMAI_MCP_URL || "https://mcp.busymate.dev";
-const MGMT_MCP_URL = process.env.BMAI_MGMT_MCP_URL || "https://busymate.ai/mcp";
+// One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
+// management are both Busymate AI operations and therefore use busymate.ai/mcp.
+// Never route them through the separate Busymate DevTools MCP.
+const MCP_URL = resolveBusymateAiMcpUrl(process.env.BMAI_MGMT_MCP_URL);
 const EMBED_ORIGIN = process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai";
-
-/// Tools served ONLY by the bmai host (busymate.ai/mcp), not the devtools host.
-const BMAI_MGMT_TOOLS = new Set([
-  "set_tenant_branding",
-  "add_tenant_admin",
-  "upsert_tenant_support_connector",
-  "publish_tenant_runtime",
-]);
-
-/// Route each tool to the host that serves it (same token works on both).
-function hostForTool(name: string): string {
-  return BMAI_MGMT_TOOLS.has(name) ? MGMT_MCP_URL : MCP_URL;
-}
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -80,29 +62,16 @@ function makeTokenStore(id: string): TokenStore {
   };
 }
 
-// The two hosts are separate RFC-8707 resources (devtools vs bmai), so the token
-// for one is rejected on the other ("token resource mismatch"). The app therefore
-// holds TWO durable credentials for the SAME provisioner identity, each minted
-// against its own issuer + resource, routed per-tool.
-const partnerTokenProvider = createTokenProvider({
-  mcpUrl: MCP_URL, // mcp.busymate.dev — devtools resource + the OAuth issuer
-  staticToken: process.env.BMAI_PROVISION_TOKEN || undefined,
-  seedClientId: process.env.BMAI_PROVISION_CLIENT_ID || undefined,
-  seedRefreshToken: process.env.BMAI_PROVISION_REFRESH_TOKEN || undefined,
-  store: makeTokenStore("provision"),
-});
-const mgmtTokenProvider = createTokenProvider({
-  mcpUrl: MGMT_MCP_URL, // busymate.ai/mcp — bmai resource + its own OAuth issuer
+// One RFC-8707 resource and one durable rotating credential for every Busymate
+// AI call. The existing `mgmt` store id is preserved so deployed refresh-token
+// rotation survives this code upgrade without re-authorization.
+const tokenProvider = createTokenProvider({
+  mcpUrl: MCP_URL,
   staticToken: process.env.BMAI_MGMT_TOKEN || undefined,
   seedClientId: process.env.BMAI_MGMT_CLIENT_ID || undefined,
   seedRefreshToken: process.env.BMAI_MGMT_REFRESH_TOKEN || undefined,
   store: makeTokenStore("mgmt"),
 });
-
-/** The token provider whose resource matches the host that serves the tool. */
-function tokenProviderForTool(name: string) {
-  return BMAI_MGMT_TOOLS.has(name) ? mgmtTokenProvider : partnerTokenProvider;
-}
 
 /** Sign a proof-of-shop for a shop (fail-closed to null when no secret is set). */
 function shopProof(shop: string) {
@@ -117,7 +86,6 @@ export async function callMcpTool<T = unknown>(
   name: string,
   args: Record<string, unknown>,
 ): Promise<McpResult<T>> {
-  const tokenProvider = tokenProviderForTool(name);
   let token: string;
   try {
     token = await tokenProvider.getAccessToken();
@@ -126,9 +94,8 @@ export async function callMcpTool<T = unknown>(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
-  const host = hostForTool(name);
   const doFetch = (bearer: string) =>
-    fetch(host, {
+    fetch(MCP_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${bearer}` },
       body: JSON.stringify({
