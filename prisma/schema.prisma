@@ -11,7 +11,7 @@ datasource db {
 }
 
 /// Shopify session storage adapter table (@shopify/shopify-app-session-storage-prisma).
-/// Holds the offline access token per shop used by the Admin GraphQL connector.
+/// Holds the EXPIRING offline access token (+ refresh token) per shop used by the Admin GraphQL connector.
 model Session {
   id            String    @id
   shop          String
@@ -28,6 +28,9 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+  /// Expiring offline tokens (#2110): the rotating refresh credential (encrypted at rest) + its expiry.
+  refreshToken        String?
+  refreshTokenExpires DateTime?
 
   @@index([shop])
 }
@@ -42,6 +45,18 @@ model ShopTenant {
   provisionError String?
   customDomain   String?  // storefront custom domain, added to the embed-origin allowlist
   publishedAt    DateTime?
+  /// Training state (#2110 grounding): what the assistant was last trained on via
+  /// publish_tenant_runtime.knowledge_sources (app/lib/kbTrain.ts). Counts are the
+  /// items INCLUDED; *Total = items the store has (truncated when smaller).
+  kbTrainedAt     DateTime?
+  kbError         String?
+  kbProducts      Int?
+  kbPolicies      Int?
+  kbPages         Int?
+  kbChars         Int?
+  kbTruncated     Boolean?
+  kbProductsTotal Int?
+  kbPagesTotal    Int?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

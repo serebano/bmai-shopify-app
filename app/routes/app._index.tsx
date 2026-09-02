@@ -1,14 +1,17 @@
-import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import {
   Badge,
+  Banner,
   BlockStack,
   Box,
   Button,
   Card,
   InlineGrid,
+  InlineStack,
   Layout,
   Link,
+  List,
   Page,
   Text,
 } from "@shopify/polaris";
@@ -16,25 +19,72 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
+import { onAppInstalled } from "../bmai.server";
+import { readTrainingState } from "../lib/retrain.server";
+import { resolveBillingAccess } from "../lib/billingGate";
+import { planFor } from "../lib/plans";
+import {
+  APP_EMBED_LABEL,
+  EMBED_STEPS,
+  buildSetupChecklist,
+  detectStorefrontEmbed,
+  themeEditorActivateUrl,
+  themeEditorAppEmbedsUrl,
+  trainingSummary,
+} from "../lib/themeEmbed";
+
+const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
-  const tenant = await prisma.shopTenant.findUnique({
-    where: { shop },
-    include: { billing: true },
-  });
+  const tenant = await prisma.shopTenant.findUnique({ where: { shop }, include: { billing: true } });
   const slug = tenant?.slug ?? shopToSlug(shop);
+  const training = readTrainingState(tenant);
+  const access = resolveBillingAccess({ status: tenant?.billing?.status, plan: tenant?.billing?.plan, shop, appHandle: APP_HANDLE });
+  // Scope-free embed detection from the public storefront (unknown on a
+  // password-protected store — the written steps cover that case).
+  const embed = await detectStorefrontEmbed(shop);
+  const provisionState = tenant?.provisionState ?? "pending";
+  const steps = buildSetupChecklist({
+    provisionState,
+    connectorReady: Boolean(tenant?.connectorId),
+    embed,
+    trainedAt: training.trainedAt,
+    trainError: training.error,
+    counts: training.counts,
+    fetched: training.fetched,
+    truncated: training.truncated,
+    planId: access.planId,
+    hasSubscription: tenant?.billing?.status === "active" || tenant?.billing?.status === "pending",
+  });
   return {
     shop,
-    slug,
     servingHost: `${slug}.busymate.ai`,
-    provisionState: tenant?.provisionState ?? "pending",
+    provisionState,
     provisionError: tenant?.provisionError ?? null,
-    publishedAt: tenant?.publishedAt ?? null,
     connectorReady: Boolean(tenant?.connectorId),
-    billingStatus: tenant?.billing?.status ?? "inactive",
+    training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
+    embed,
+    steps,
+    embedSteps: EMBED_STEPS,
+    embedLabel: APP_EMBED_LABEL,
+    activateUrl: themeEditorActivateUrl(shop),
+    appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
+    planName: planFor(access.planId).name,
+    live: provisionState === "published",
   };
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const form = await request.formData();
+  if (String(form.get("intent")) === "retry") {
+    // Idempotent re-run of the provisioning lifecycle (NEVER PARK an errored install).
+    await onAppInstalled(session);
+  }
+  const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
+  return { ok: tenant?.provisionState === "published", state: tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? null };
 };
 
 function stateBadge(state: string) {
@@ -46,52 +96,108 @@ function stateBadge(state: string) {
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
+  const retry = useFetcher<typeof action>();
+  const done = data.steps.filter((s) => s.done).length;
   return (
     <Page>
       <TitleBar title="Busymate AI" />
       <Layout>
         <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <InlineGrid columns="1fr auto" alignItems="center">
-                <Text as="h2" variant="headingMd">
-                  Your AI assistant
-                </Text>
-                {stateBadge(data.provisionState)}
-              </InlineGrid>
-              <Text as="p" variant="bodyMd" tone="subdued">
-                Busymate AI adds <strong>bro</strong>, your store&apos;s own AI
-                assistant, to your storefront. bro answers only from your own
-                products &amp; policies, in 14 languages, and can take real order
-                actions with your confirmation.
-              </Text>
-              {data.provisionError ? (
-                <Box
-                  background="bg-surface-critical"
-                  padding="300"
-                  borderRadius="200"
-                >
-                  <Text as="p" tone="critical">
-                    Provisioning error: {data.provisionError}. Retry from the
-                    Connector &amp; data page.
+          <BlockStack gap="400">
+            {data.provisionError ? (
+              <Banner tone="critical" title="Provisioning needs attention">
+                <BlockStack gap="200">
+                  <Text as="p">{data.provisionError}</Text>
+                  <retry.Form method="post">
+                    <input type="hidden" name="intent" value="retry" />
+                    <Button submit variant="primary" loading={retry.state !== "idle"}>
+                      Retry setup
+                    </Button>
+                  </retry.Form>
+                  {retry.data && !retry.data.ok ? (
+                    <Text as="p" tone="critical">
+                      Still not live ({retry.data.state}){retry.data.error ? `: ${retry.data.error}` : ""}.
+                    </Text>
+                  ) : null}
+                </BlockStack>
+              </Banner>
+            ) : null}
+
+            <Card>
+              <BlockStack gap="400">
+                <InlineGrid columns="1fr auto" alignItems="center">
+                  <Text as="h2" variant="headingMd">
+                    Set up your AI assistant
                   </Text>
+                  <InlineStack gap="200" blockAlign="center">
+                    <Text as="span" tone="subdued">
+                      {done}/{data.steps.length} done
+                    </Text>
+                    {stateBadge(data.provisionState)}
+                  </InlineStack>
+                </InlineGrid>
+                <Text as="p" tone="subdued">
+                  Busymate AI adds <strong>bro</strong>, your store&apos;s own assistant, to your storefront. It answers
+                  only from your products, pages and policies, in your shoppers&apos; languages, and takes order actions
+                  only with confirmation.
+                </Text>
+                <List type="number">
+                  {data.steps.map((s) => (
+                    <List.Item key={s.id}>
+                      <InlineStack gap="200" blockAlign="center" wrap={false}>
+                        <Text as="span" fontWeight="semibold">
+                          {s.title}
+                        </Text>
+                        {s.failed ? (
+                          <Badge tone="critical">Failed</Badge>
+                        ) : s.done ? (
+                          <Badge tone="success">Done</Badge>
+                        ) : (
+                          <Badge tone="attention">To do</Badge>
+                        )}
+                      </InlineStack>
+                      <Text as="p" tone="subdued">
+                        {s.detail}
+                      </Text>
+                    </List.Item>
+                  ))}
+                </List>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="300">
+                <InlineGrid columns="1fr auto" alignItems="center">
+                  <Text as="h2" variant="headingMd">
+                    Turn on the storefront assistant
+                  </Text>
+                  {data.embed === "on" ? <Badge tone="success">On</Badge> : data.embed === "off" ? <Badge tone="attention">Off</Badge> : null}
+                </InlineGrid>
+                <Text as="p" tone="subdued">
+                  The assistant is a theme app embed. Click the button to open your theme editor with{" "}
+                  <strong>{data.embedLabel}</strong> already switched on, then click <strong>Save</strong>.
+                </Text>
+                <InlineStack gap="300">
+                  <Button variant="primary" url={data.activateUrl} target="_top">
+                    Turn on the storefront assistant
+                  </Button>
+                  <Button url={data.appEmbedsUrl} target="_top">
+                    Open App embeds
+                  </Button>
+                </InlineStack>
+                <Box>
+                  <Text as="h3" variant="headingSm">
+                    Or do it by hand
+                  </Text>
+                  <List type="number">
+                    {data.embedSteps.map((step) => (
+                      <List.Item key={step}>{step}</List.Item>
+                    ))}
+                  </List>
                 </Box>
-              ) : null}
-              <Text as="p" variant="bodyMd">
-                Serving host:{" "}
-                <Link url={`https://${data.servingHost}`} target="_blank">
-                  {data.servingHost}
-                </Link>
-              </Text>
-              <Button
-                variant="primary"
-                url={`https://${data.servingHost}`}
-                target="_blank"
-              >
-                Open assistant
-              </Button>
-            </BlockStack>
-          </Card>
+              </BlockStack>
+            </Card>
+          </BlockStack>
         </Layout.Section>
 
         <Layout.Section variant="oneThird">
@@ -99,13 +205,47 @@ export default function Index() {
             <Card>
               <BlockStack gap="200">
                 <Text as="h3" variant="headingSm">
-                  Connector
+                  Your assistant
+                </Text>
+                <Text as="p" tone="subdued">
+                  {data.live ? "Serving at " : "Will serve at "}
+                  <Link url={`https://${data.servingHost}`} target="_blank">
+                    {data.servingHost}
+                  </Link>
+                </Text>
+                {data.live ? (
+                  <Button url={`https://${data.servingHost}`} target="_blank">
+                    Open assistant
+                  </Button>
+                ) : null}
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">
+                  Store connection
                 </Text>
                 <Text as="p" tone="subdued">
                   {data.connectorReady
-                    ? "Shopify Admin connector registered — order-aware tools available."
-                    : "Not yet registered."}
+                    ? "Connected — the assistant can look up a signed-in shopper's own orders."
+                    : "Not connected yet — order lookups are unavailable until the connection registers. Retry from the Store connection page."}
                 </Text>
+                <Link url="/app/connector">Manage store connection</Link>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">
+                  Training
+                </Text>
+                <Text as="p" tone="subdued">
+                  {data.training.error
+                    ? `Training failed: ${data.training.error}`
+                    : data.training.summary
+                      ? `Trained on ${data.training.summary}.`
+                      : "Not trained yet — the assistant learns your products, policies and pages when setup completes."}
+                </Text>
+                <Link url="/app/connector">Re-train</Link>
               </BlockStack>
             </Card>
             <Card>
@@ -114,9 +254,11 @@ export default function Index() {
                   Billing
                 </Text>
                 <Text as="p" tone="subdued">
-                  Pay per resolution, capped. Status: {data.billingStatus}. The
-                  widget is never disabled at the cap.
+                  You&apos;re on the <strong>{data.planName}</strong> plan. Plans include a monthly number of AI resolutions;
+                  paid plans charge per extra resolution up to a monthly cap. The assistant is never switched off for
+                  billing.
                 </Text>
+                <Link url="/app/billing">Manage plan</Link>
               </BlockStack>
             </Card>
           </BlockStack>

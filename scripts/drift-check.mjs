@@ -13,7 +13,8 @@
  * Fields checked (canonical `store_apps` record ↔ repo artifact):
  *   • app name       → shopify.app.toml `name` (CLI-pushable) + listing/en.json
  *   • tagline        → listing/en.json
- *   • description    → listing/en.json (intro + details)
+ *   • description    → listing/en.json (intro = paragraph 1, details = paragraph 2)
+ *   • privacy URL    → listing/en.json (privacy_url)
  *   • pricing plans  → listing/pricing.json (source-of-record for Managed Pricing)
  *
  * Exit codes (FAIL CLOSED — "couldn't check" is never a pass):

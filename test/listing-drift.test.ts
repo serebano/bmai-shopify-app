@@ -8,7 +8,7 @@
  * a drift-check that can only ever say "ok" would be green-while-dead.
  */
 import { describe, expect, it } from "vitest";
-import { canonicalIntro, computeListingDrift, normalizePlan } from "../scripts/lib/listing-drift.mjs";
+import { canonicalDetails, canonicalIntro, computeListingDrift, normalizePlan } from "../scripts/lib/listing-drift.mjs";
 import { normalizeRecord } from "../scripts/lib/store-canonical.mjs";
 
 const RECORD = {
@@ -124,5 +124,48 @@ describe("normalizeRecord — the endpoint envelope → flat record", () => {
   it("falls back to app.pricingPlans for a saved --record file", () => {
     const r = normalizeRecord({ app: { slug: "s", name: "N", pricingPlans: [{ name: "Pro" }] } });
     expect(r.pricingPlans[0].name).toBe("Pro");
+  });
+});
+
+describe("details + support-URL drift (busymate-devtools#2110 — the two fields that DID drift)", () => {
+  // The Partner form's "App details" is paragraph 2 of the canonical description and
+  // the listing's privacy_url is the record's privacyUrl. Both had silently diverged
+  // (details carried pricing words + "14 languages"; privacy_url pointed at a
+  // different host) while the check only asserted paragraph 1 — so assert them.
+  const RECORD_2 = { ...RECORD, privacyUrl: "https://store.busymate.ai/legal/privacy" };
+  const IN_SYNC_2 = {
+    ...IN_SYNC,
+    listingEn: { ...IN_SYNC.listingEn, privacy_url: "https://store.busymate.ai/legal/privacy" },
+  };
+
+  it("passes when details == paragraph 2 and privacy_url == record.privacyUrl", () => {
+    expect(computeListingDrift(RECORD_2, IN_SYNC_2).ok).toBe(true);
+  });
+
+  it("flags a stale details paragraph", () => {
+    const r = computeListingDrift(RECORD_2, {
+      ...IN_SYNC_2,
+      listingEn: { ...IN_SYNC_2.listingEn, details: "Old details with pricing words." },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.differences.map((d) => d.field)).toContain("listing/en.json:details");
+  });
+
+  it("flags a privacy_url that differs from the record", () => {
+    const r = computeListingDrift(RECORD_2, {
+      ...IN_SYNC_2,
+      listingEn: { ...IN_SYNC_2.listingEn, privacy_url: "https://busymate.ai/legal/privacy" },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.differences.map((d) => d.field)).toContain("listing/en.json:privacy_url");
+  });
+
+  it("canonicalDetails returns paragraph 2 only", () => {
+    expect(canonicalDetails("A line.\n\nB body.\n\n## More")).toBe("B body.");
+  });
+
+  it("normalizeRecord carries privacyUrl (camel + snake)", () => {
+    expect(normalizeRecord({ app: { slug: "s", name: "N", privacyUrl: "https://x/p" } }).privacyUrl).toBe("https://x/p");
+    expect(normalizeRecord({ app: { slug: "s", name: "N", privacy_url: "https://x/q" } }).privacyUrl).toBe("https://x/q");
   });
 });

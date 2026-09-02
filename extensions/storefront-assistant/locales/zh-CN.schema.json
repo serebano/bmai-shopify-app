@@ -1,0 +1,9 @@
+{
+  "name": "Busymate AI 助手",
+  "settings": {
+    "launcher_label": {
+      "label": "聊天按钮文字",
+      "info": "打开聊天的按钮文字。留空则在每种店铺语言中使用默认翻译。"
+    }
+  }
+}

@@ -1,12 +1,14 @@
 import type { SubscriptionStatus } from "./billingGate";
-import { PLANS } from "./usageBilling";
+import { PLANS, planByHandle } from "./plans";
 
 /**
- * Map a Shopify `AppSubscription.status` (webhook or GraphQL) onto the app's
- * `SubscriptionStatus`, so `resolveBillingAccess()` reflects a REAL subscription
- * (accept / decline / reinstall-re-request all converge here). Shopify's enum:
- * ACTIVE · PENDING · ACCEPTED · DECLINED · EXPIRED · FROZEN · CANCELLED. Anything
- * unknown fails safe to `inactive` (→ nudge the merchant to a plan; widget stays on).
+ * Subscription-state extractors. Sources, in priority order:
+ *   1. Partner API `activeSubscription` — the App Pricing truth (partnerApi.ts)
+ *   2. the App Pricing redirect `plan_handle` (pending until #1 confirms it)
+ *   3. legacy Billing API: `app_subscriptions/update` webhook (App Pricing no
+ *      longer sends it) and `currentAppInstallation.activeSubscriptions` (only
+ *      Billing-API subscriptions) — kept as fallbacks for migrated contracts.
+ * Anything unknown fails safe to `inactive` (⇒ Free; the widget stays on).
  */
 export function normalizeSubscriptionStatus(raw: string | null | undefined): SubscriptionStatus {
   switch (String(raw ?? "").toUpperCase()) {
@@ -27,12 +29,12 @@ export function normalizeSubscriptionStatus(raw: string | null | undefined): Sub
   }
 }
 
-/** Match a Shopify plan/subscription name to one of our plan ids, or null. */
+/** Match a plan handle OR display name to one of our plan ids, or null. */
 export function matchPlanId(name: string | null | undefined): string | null {
   const n = String(name ?? "").trim().toLowerCase();
   if (!n) return null;
-  const byId = PLANS.find((p) => p.id === n);
-  if (byId) return byId.id;
+  const byHandle = planByHandle(n);
+  if (byHandle) return byHandle.id;
   const byName = PLANS.find((p) => p.name.toLowerCase() === n);
   return byName ? byName.id : null;
 }
@@ -41,6 +43,17 @@ export interface SubscriptionState {
   status: SubscriptionStatus;
   subscriptionId: string | null;
   plan: string | null;
+}
+
+/**
+ * The App Pricing redirect (`?plan_handle=<handle>` on the plan's redirect URL)
+ * ⇒ a PENDING state for that plan, confirmed by the Partner API on the same
+ * request. Unknown/missing handle ⇒ null (nothing to record).
+ */
+export function subscriptionStateFromPlanHandle(planHandle: string | null | undefined): SubscriptionState | null {
+  const plan = matchPlanId(planHandle);
+  if (!plan) return null;
+  return { status: "pending", subscriptionId: null, plan };
 }
 
 interface WebhookSubscription {

@@ -2,18 +2,16 @@
   "_locale": "de",
   "app_name": "Busymate AI",
   "tagline": "KI-Support für deinen Shop, mit Bestellkontext",
-  "intro": "Fundierter, mit Quellen belegter Support, der echte Bestellaktionen ausführt — in 14 Sprachen.",
-  "details": "Busymate AI fügt deinem Shop einen KI-Support-Agenten hinzu. Er antwortet ausschließlich auf Basis deiner eigenen Produkte und Richtlinien — fundiert, mit belegten Quellen und mit dem Hinweis, wenn er sich nicht sicher ist — und kümmert sich um den Bestellstatus sowie um Rücksendungen, Rückerstattungen und Stornierungen mit deiner Bestätigung und einem Ausgabenlimit. Er spricht 14 Sprachen mit automatischer Erkennung und RTL-Unterstützung und übergibt an dein Team, wenn die Zuversicht gering ist. Du zahlst nur für Konversationen, die er löst — gedeckelt, und der Assistent arbeitet auch nach Erreichen des Limits weiter.",
+  "intro": "KI-Support, der nur aus den Inhalten deines Shops antwortet. Er bearbeitet Bestellanfragen und senkt das Ticketaufkommen.",
+  "details": "Busymate AI fügt deinem Onlineshop einen KI-Support-Assistenten hinzu. Er antwortet Käufern ausschließlich auf Basis deiner eigenen Produkte, Richtlinien und Shop-Inhalte, zeigt seine Quellen und sagt, wenn er sich nicht sicher ist, statt zu raten. Angemeldete Käufer können Bestellstatus und Sendungsverfolgung abrufen und darum bitten, eine Bestellung zu ändern, zu stornieren, zurückzusenden oder zu erstatten; jede Aktion wird zuerst bestätigt, und größere Erstattungen oder Gespräche mit geringer Zuversicht werden an dein Team übergeben. Er antwortet in der Sprache des Käufers, auch in Schriften, die von rechts nach links laufen.",
   "feature_bullets": [
-    "Installation mit 1 Klick + automatisches Training mit deinem Katalog und deinen Richtlinien",
-    "Mit Bestellkontext: verfolgt, ändert, storniert, erstattet — mit Bestätigung",
-    "Antwortet nur aus deinem Shop, mit Quellen: fundiert, belegt und weist auf Unsicherheit hin",
-    "Übergabe an einen Menschen je nach Zuversicht, mit sauberer Rückgabe",
-    "Simulation vor dem Start anhand deiner bisherigen Konversationen",
-    "Transparente Preise pro gelöster Konversation",
-    "14 Sprachen, automatisch erkannt, RTL-fähig"
+    "Antwortet nur aus deinen eigenen Produkten, Richtlinien und Shop-Inhalten, mit Quellen",
+    "Sagt, wenn er sich nicht sicher ist, und bietet einen Menschen an, statt zu raten",
+    "Angemeldete Käufer erhalten Bestellstatus, Sendungsverfolgung und bestätigte Bestellaktionen",
+    "Stornierungen, Rücksendungen und Erstattungen werden zuerst bestätigt; größere Erstattungen gehen an dich",
+    "Antwortet in der Sprache des Käufers, auch in Schriften von rechts nach links"
   ],
-  "pricing_summary": "Zahle pro gelöster Konversation. Lege ein monatliches Ausgabenlimit fest; der Assistent arbeitet auch über das Limit hinaus weiter.",
-  "privacy_url": "https://busymate.ai/legal/privacy",
-  "faq_url": "https://busymate.ai/shopify/faq"
+  "pricing_summary": "Monatliche Pläne mit inbegriffenen KI-Lösungen, danach ein Preis pro Lösung bis zu deinem monatlichen Ausgabenlimit. Kostenloser Plan verfügbar; bezahlte Pläne starten mit einer 14-tägigen kostenlosen Testphase.",
+  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "faq_url": "https://store.busymate.ai/legal/faq"
 }

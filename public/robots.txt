@@ -1,0 +1,13 @@
+# Busymate AI for Shopify — https://store.busymate.ai
+# The embedded merchant app, auth, webhooks, the per-store MCP connector and the
+# App-Proxy identity endpoint are not web pages; only the public root and the
+# legal pages are meant to be indexed.
+User-agent: *
+Allow: /$
+Allow: /legal/
+Disallow: /app
+Disallow: /auth
+Disallow: /webhooks
+Disallow: /mcp
+Disallow: /identity
+Disallow: /api

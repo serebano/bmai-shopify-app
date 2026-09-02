@@ -9,14 +9,18 @@ import prisma from "./db.server";
 import { onAppInstalled, onAppUninstalled } from "./bmai.server";
 import { encryptedSessionStorage } from "./lib/encryptedSessionStorage";
 
-// The pinned Admin API version. `@shopify/shopify-api` (pinned) only enumerates up
-// to April26, so 2026-07 is expressed as its literal string (a valid, released
-// stable version the runtime uses verbatim in the request URL).
-const API_VERSION = (process.env.SHOPIFY_API_VERSION || "2026-07") as ApiVersion;
+// The pinned Admin API version (2026-07). Overridable by env for a dated dry-run;
+// the runtime uses the string verbatim in the request URL.
+const API_VERSION = (process.env.SHOPIFY_API_VERSION || ApiVersion.July26) as ApiVersion;
 
-// Managed installation + token exchange (unstable_newEmbeddedAuthStrategy is the
-// template default). The offline access token persisted here backs the Shopify
-// Admin GraphQL connector (app/mcp/shopifyAdmin.ts).
+// Managed installation + token exchange (the v2 default). EXPIRING offline access
+// tokens (#2110): each token lives ~1h and the library refreshes it — on the
+// embedded path inside authenticate.admin, on every background path inside
+// unauthenticated.admin(shop) (app/mcp/shopifyAdmin.ts) — using the refresh token
+// persisted next to it. Both are encrypted at rest by the session-storage decorator.
+// Shopify rejects non-expiring tokens for public apps created after 2026-04-01
+// ("[API] Non-expiring access tokens are no longer accepted"); pre-upgrade
+// sessions are cycled once with scripts/cycle-offline-tokens.ts (SETUP.md).
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
@@ -25,12 +29,11 @@ const shopify = shopifyApp({
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   // Session storage wrapped with app-level field encryption at rest (accessToken +
-  // staff email). See app/lib/encryptedSessionStorage.ts + app/lib/fieldCipher.ts.
+  // refreshToken + staff email). See app/lib/encryptedSessionStorage.ts + fieldCipher.ts.
   sessionStorage: encryptedSessionStorage(new PrismaSessionStorage(prisma)),
   distribution: AppDistribution.AppStore,
   future: {
-    unstable_newEmbeddedAuthStrategy: true,
-    removeRest: true,
+    expiringOfflineAccessTokens: true,
   },
   hooks: {
     // afterAuth = the install/re-auth convergence point. Runs the bmai MCP
@@ -40,25 +43,17 @@ const shopify = shopifyApp({
     // Shopify token-exchange strategy, which converts ANY afterAuth throw into a
     // bare `500 Internal Server Error` on the embedded app's first load — the App
     // Store review failure (Req 2.1.1 "no critical errors" / 2.1.3 "an interactive
-    // UI, not a web 500"). Both steps are idempotent and re-run on every re-auth,
-    // so a transient failure here is best-effort: webhook registration is logged
-    // and swallowed; provisioning errors are recorded + surfaced in the app UI
-    // (onAppInstalled never throws).
+    // UI, not a web 500"). onAppInstalled never throws: provisioning errors are
+    // recorded + surfaced in the app UI.
+    //
+    // Webhook subscriptions are declared in shopify.app.toml (app-specific
+    // subscriptions, managed by `shopify app deploy`) — there is deliberately no
+    // per-install registerWebhooks call here (it was redundant and only logged a
+    // 403 per install).
     afterAuth: async ({ session }) => {
-      try {
-        await shopify.registerWebhooks({ session });
-      } catch (err) {
-        console.error(
-          `[shopify] registerWebhooks failed for ${session.shop}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
       await onAppInstalled(session);
     },
   },
-  ...(process.env.SHOP_CUSTOM_DOMAIN
-    ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
-    : {}),
 });
 
 export default shopify;
@@ -67,7 +62,6 @@ export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
-export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
 
 // Re-export so webhook routes can reach the teardown seam without a cycle.

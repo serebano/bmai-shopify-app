@@ -18,14 +18,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
   return (
-    <AppProvider embedded apiKey={apiKey}>
+    <AppProvider apiKey={apiKey}>
       <PolarisAppProvider i18n={enPolarisTranslations}>
         <NavMenu>
           <Link to="/app" rel="home">
             Home
           </Link>
+          <Link to="/app/conversations">Conversations</Link>
           <Link to="/app/settings">Assistant settings</Link>
-          <Link to="/app/connector">Connector &amp; data</Link>
+          <Link to="/app/connector">Store connection</Link>
           <Link to="/app/billing">Billing</Link>
         </NavMenu>
         <Outlet />

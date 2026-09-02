@@ -11,8 +11,10 @@
  * token. AUTHORIZATION of the partner tenant tools is PROOF-OF-SHOP (`lib/partnerProof.ts`).
  *
  * The install callback runs the LIVE MCP tenant lifecycle:
- *   provision_partner_tenant (proof) → set_tenant_branding → add_tenant_embed_origin
- *   (proof) → add_tenant_admin (best-effort) → register connector → publish_tenant_runtime
+ *   provision_partner_tenant (proof; reactivates an archived tenant on reinstall)
+ *   → set_tenant_branding → add_tenant_embed_origin (proof) → register connector
+ *   → build the store knowledge (products/policies/pages) → publish_tenant_runtime
+ *   (origins + knowledge_sources — the tenant is TRAINED in the publish that takes it live)
  *
  * FAIL-CLOSED: no credential ⇒ the op returns an error, never fake success
  * (green-while-dead).
@@ -28,6 +30,7 @@ import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
+import { buildKnowledgeForShop } from "./lib/kbFetch";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
@@ -179,6 +182,9 @@ function liveProvisionDeps(): ProvisionDeps {
     // Register delegated writes only once this host can verify Busymate AI's actor
     // tokens (BMAI_SUPPORT_ACTOR_MASTER present) — mirrors /api/bmai/status.
     delegationReady: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),
+    // Train on the store in the same publish (Admin GraphQL through the refreshing
+    // offline session). A failure is recorded as kbError, never blocks going live.
+    buildKnowledge: buildKnowledgeForShop,
   };
 }
 
@@ -205,6 +211,12 @@ export async function onAppInstalled(session: Session): Promise<void> {
   if (!outcome.ok) {
     // Recorded as error state for the UI; log for operability. Not re-thrown.
     console.error(`[bmai] onAppInstalled did not publish ${session.shop}: ${outcome.error ?? "unknown"}`);
+  } else {
+    const t = outcome.training;
+    console.log(
+      `[bmai] ${outcome.reactivated ? "reinstalled (tenant reactivated)" : "published"} ${session.shop} tenant=${outcome.tenantId}` +
+        (t ? (t.ok ? ` trained: ${t.counts.products} products, ${t.counts.policies} policies, ${t.counts.pages} pages${t.truncated ? " (truncated to fit)" : ""}` : ` NOT trained: ${t.error}`) : ""),
+    );
   }
   // Best-effort (soft) step failures don't block publish, but log them so a
   // silently-degraded connector/branding step is visible in operations.
@@ -228,8 +240,9 @@ export async function setTenantBranding(
 }
 
 /**
- * publish_tenant_runtime via MCP — the proof-signed + confirm shape. Used by the KB
- * re-ingest path (passes the fresh kb_snapshot). Fail-closed on a missing tenant.
+ * publish_tenant_runtime via MCP — the proof-signed + confirm shape. Used by the
+ * re-train path (origins + the compressed `knowledge_sources`). Fail-closed on a
+ * missing tenant.
  */
 export async function publishTenantRuntime(
   shop: string,

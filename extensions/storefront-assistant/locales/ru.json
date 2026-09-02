@@ -1,4 +1,6 @@
 {
   "launcher_label": "Спросите нас",
-  "assistant_name": "Ассистент"
+  "launcher_aria_label": "Открыть чат с помощником магазина",
+  "launcher_title": "Чат с нашим помощником",
+  "assistant_name": "Помощник"
 }

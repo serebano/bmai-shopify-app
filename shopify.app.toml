@@ -18,7 +18,9 @@ embedded = true
 [access_scopes]
 # Least-privilege. read_all_orders (>60-day orders) needs Shopify approval and is
 # requested separately at review time, not here.
-scopes = "read_products,read_content,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
+# read_legal_policies: the assistant is trained on the store's policies
+# (Shop.shopPolicies — app/lib/kbFetch.ts); read_content covers pages.
+scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
 
 [auth]
 redirect_urls = [
@@ -26,6 +28,19 @@ redirect_urls = [
   "https://store.busymate.ai/auth/shopify/callback",
   "https://store.busymate.ai/api/auth/callback"
 ]
+
+# --- App Proxy (storefront → app) ---
+# The theme app-embed widget POSTs the logged-in customer signal to
+# /apps/busymate-ai/identity on the STOREFRONT. Shopify signs the request (HMAC +
+# logged_in_customer_id) and proxies it to <url>/identity — app/routes/identity.tsx
+# → app/lib/storefrontIdentity.ts — which mints the customer-scoped launch JWT.
+# Without this block that fetch 404s on every store and the identified-customer
+# tier (order-aware answers) is unreachable. Contract test: test/appConfig.test.ts
+# (proxy path == the extension's IDENTITY_URL). Takes effect on `shopify app deploy`.
+[app_proxy]
+url = "https://store.busymate.ai"
+subpath = "busymate-ai"
+prefix = "apps"
 
 [webhooks]
 api_version = "2026-07"

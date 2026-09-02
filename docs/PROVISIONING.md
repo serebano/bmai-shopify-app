@@ -25,10 +25,19 @@ is the single integration seam. Idempotent: safe to re-run on every re-auth.
    `delegation_mode:'signed_actor_token'` + the delegated write tools when the actor
    verifier is ready (`BMAI_SUPPORT_ACTOR_MASTER` set), else read-only `none`; the
    four-tier `mcp_connector_support_policies`.
-7. **Auto-train** — `app/lib/ingest.ts` builds the KB snapshot (products + policies
-   + pages).
-8. **Publish** — `publish_tenant_runtime` (draft → preflight → publish, server-side).
-   The projection worker delivers → the tenant goes LIVE.
+7. **Train** — `app/lib/kbFetch.ts` reads the store's products, shop policies and pages
+   (Admin GraphQL; `read_products` / `read_legal_policies` / `read_content`) and
+   `app/lib/kbSnapshot.ts` compresses them deterministically into the platform's
+   `knowledge_sources` shape (≤40 sources, ≤20,000 chars each, ≤40,000 total; policies →
+   products → pages, whole items, "+N more" note when trimmed). A failure here is
+   recorded as `kbError` (surfaced on Home / Store connection) — it never blocks step 8.
+8. **Publish** — ONE `publish_tenant_runtime` carrying the launch/embed origins AND the
+   `knowledge_sources` (draft → preflight → publish, server-side). The projection worker
+   delivers → the tenant goes LIVE, **trained**. The training state (`kbTrainedAt`,
+   counts, `kbError`) is persisted on `ShopTenant`. Re-training: product webhooks
+   (`webhooks.kb.products.tsx`, debounced per shop) and **Store connection → Re-train**
+   (`app/lib/ingest.ts` → `app/lib/kbTrain.ts`) run the same fetch → compress → publish
+   with the same origins.
 9. **Widget** — the theme app extension injects `/embed/v1.js data-assistant=<slug>`;
    logged-in customers get identified launch (App Proxy `logged_in_customer_id` →
    `/identity` mints the ES256 launch JWT).
@@ -52,7 +61,11 @@ lifecycle records `provisionState:"error"` — it **does not fake success**
 (green-while-dead is a bounce-able anti-pattern). The install is retryable from
 **Connector & data → Re-provision**.
 
-## Teardown
+## Teardown + reinstall
 
-- `app/uninstalled` → `suspend_tenant` + purge sessions (soft; keeps data 48h).
+- `app/uninstalled` → `suspend_tenant` (the tenant is ARCHIVED on the platform) + purge
+  sessions (soft; keeps data 48h).
+- **Reinstall** → the lifecycle re-runs: `provision_partner_tenant` REACTIVATES the
+  archived tenant under the proof-of-shop (`reactivated: true`), the runtime is
+  re-published (origins + knowledge) and the app records `published` — Home shows Live.
 - `shop/redact` (GDPR, 48h later) → `delete_tenant` + purge all local state.

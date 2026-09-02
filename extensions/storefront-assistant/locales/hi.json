@@ -1,4 +1,6 @@
 {
   "launcher_label": "हमसे पूछें",
+  "launcher_aria_label": "स्टोर सहायक चैट खोलें",
+  "launcher_title": "हमारे सहायक से चैट करें",
   "assistant_name": "सहायक"
 }

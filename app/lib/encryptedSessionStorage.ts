@@ -4,19 +4,25 @@ import { decryptField, encryptField } from "./fieldCipher";
 
 /**
  * A SessionStorage decorator that encrypts sensitive Shopify session columns AT
- * REST — the offline `accessToken` (a bearer credential to the store's Admin API)
- * and the staff `email` (PII) — while delegating persistence to any underlying
- * storage (PrismaSessionStorage in prod). Encryption happens on the way IN
- * (storeSession) and decryption on the way OUT (loadSession/findSessionsByShop), so
- * every consumer sees plaintext and only the database holds ciphertext.
+ * REST — the offline `accessToken` (a bearer credential to the store's Admin API),
+ * the `refreshToken` (the long-lived credential that mints new access tokens under
+ * expiring offline tokens, #2110) and the staff `email` (PII) — while delegating
+ * persistence to any underlying storage (PrismaSessionStorage in prod).
+ * Encryption happens on the way IN (storeSession) and decryption on the way OUT
+ * (loadSession/findSessionsByShop), so every consumer sees plaintext and only the
+ * database holds ciphertext.
  *
+ * Every reader goes through this decorator: the library's token-exchange and
+ * refresh paths, and `app/mcp/shopifyAdmin.ts` via `unauthenticated.admin(shop)`.
  * With no `APP_ENCRYPTION_KEY` configured the field cipher is a transparent no-op,
- * so this is safe on the credential-free dev/CI path. `app/mcp/shopifyAdmin.ts`
- * reads the Session row directly (bypassing this decorator) and calls the same
- * `decryptField`, so both paths agree on the envelope format.
+ * so this is safe on the credential-free dev/CI path.
  */
 
-type SessionLike = Session & { accessToken?: string; email?: string | null };
+type SessionLike = Session & {
+  accessToken?: string;
+  refreshToken?: string;
+  email?: string | null;
+};
 
 /** Shallow clone preserving the Session prototype, then override string fields. */
 function cloneWith(session: Session, patch: Partial<SessionLike>): Session {
@@ -29,6 +35,7 @@ function transform(session: Session, fn: (v: string) => string): Session {
   const s = session as SessionLike;
   const patch: Partial<SessionLike> = {};
   if (s.accessToken) patch.accessToken = fn(s.accessToken);
+  if (s.refreshToken) patch.refreshToken = fn(s.refreshToken);
   if (s.email) patch.email = fn(s.email);
   return Object.keys(patch).length ? cloneWith(session, patch) : session;
 }

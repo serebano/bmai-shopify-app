@@ -5,7 +5,8 @@ import crypto from "node:crypto";
  *
  * The PCD (Protected Customer Data) questionnaire attests encryption at rest for
  * access tokens + PII. This helper makes that attestation TRUE: sensitive columns
- * (Shopify `Session.accessToken` + staff `email`, and the bmai `refreshToken`) are
+ * (Shopify `Session.accessToken` + `Session.refreshToken` + staff `email`, and the bmai
+ * `BmaiCredential.refreshToken`) are
  * encrypted with `encryptField` on write and `decryptField` on read.
  *
  * KEY: `APP_ENCRYPTION_KEY` — a 32-byte key as base64 (44 chars) or hex (64 chars).

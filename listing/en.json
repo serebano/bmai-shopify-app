@@ -2,18 +2,16 @@
   "_locale": "en",
   "app_name": "Busymate AI",
   "tagline": "Grounded, order-aware AI support for your store",
-  "intro": "Grounded, source-cited support that takes real order actions — in 14 languages.",
-  "details": "Busymate AI adds an AI support agent to your store. It answers only from your own products and policies — grounded, source-cited, and it refuses when it isn't sure — and handles WISMO plus returns, refunds and cancellations with your confirmation and a spend cap. It speaks 14 languages with auto-detect and RTL, and hands off to your team when confidence is low. You pay only for conversations it resolves — capped, and the assistant keeps working past the cap.",
+  "intro": "AI support that answers only from your store content. It handles order requests and cuts tickets.",
+  "details": "Busymate AI adds an AI support assistant to your online store. It answers shoppers using only your own products, policies and store content, shows its sources, and says when it is not sure instead of guessing. Signed-in shoppers can check order status and tracking and ask to update, cancel, return or refund an order; each action is confirmed first, and larger refunds or low-confidence conversations are handed to your team. It replies in the shopper's language, including right-to-left scripts.",
   "feature_bullets": [
-    "1-click install + auto-train on your catalog & policies",
-    "Order-aware: tracks, edits, cancels, refunds — with confirmation",
-    "Answers only from your store, with sources — grounded, cited, and refuses when unsure",
-    "Confidence-gated human handoff with clean hand-back",
-    "Pre-launch simulation on your past conversations",
-    "Transparent pay-per-resolution pricing",
-    "14 languages, auto-detected, RTL-ready"
+    "Answers only from your own products, policies and store content, with sources",
+    "Says when it is not sure and offers a human instead of guessing",
+    "Signed-in shoppers get order status, tracking and confirmed order actions",
+    "Cancellations, returns and refunds are confirmed first; larger refunds go to you",
+    "Replies in the shopper's own language, including right-to-left scripts"
   ],
-  "pricing_summary": "Pay per resolved conversation. Set a monthly spend cap; the assistant keeps working past the cap.",
-  "privacy_url": "https://busymate.ai/legal/privacy",
-  "faq_url": "https://busymate.ai/shopify/faq"
+  "pricing_summary": "Monthly plans with included AI resolutions, then a per-resolution charge up to your monthly spend cap. Free plan available; paid plans start with a 14-day free trial.",
+  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "faq_url": "https://store.busymate.ai/legal/faq"
 }

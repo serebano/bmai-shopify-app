@@ -1,0 +1,9 @@
+{
+  "name": "Assistente Busymate AI",
+  "settings": {
+    "launcher_label": {
+      "label": "Etichetta del pulsante chat",
+      "info": "Testo del pulsante che apre la chat. Lascia vuoto per usare il testo tradotto predefinito in ogni lingua del negozio."
+    }
+  }
+}

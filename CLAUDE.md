@@ -34,7 +34,7 @@ app/routes/webhooks.*.tsx   GDPR compliance (3) + app/uninstalled + scopes_updat
 app/routes/mcp.$.tsx        the per-store Shopify Admin MCP connector transport
 app/routes/identity.tsx     App-Proxy-verified logged-in customer → ES256 launch JWT
 app/mcp/**                  connector: transport + auth (actor-token verify) + Admin GraphQL client + tools (real, 4 tiers)
-app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · usageBilling · ingest · mgmtArgs · fieldCipher · billingSync
+app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · provision (lifecycle) · kbSnapshot/kbTrain/kbFetch/ingest (grounded knowledge) · plans/partnerApi/appEvents/usageBilling/billingGate (App Pricing) · themeEmbed · mgmtArgs · fieldCipher
 extensions/storefront-assistant/  theme app-embed block mounting the widget (×14 locales)
 prisma/schema.prisma        Session · ShopTenant · BillingState · LaunchKey
 docs/                       ARCHITECTURE · PROVISIONING · EXTENDING · LISTING
@@ -64,8 +64,13 @@ CHECKLIST.md                Built-for-Shopify compliance status
   (unset ⇒ dev no-op). See `docs/DATA-RETENTION.md`.
 - **Mgmt-call shape is shared** — `set_tenant_branding` / `publish_tenant_runtime` args
   are built ONLY by `app/lib/mgmtArgs.ts` (proof-of-shop + `confirm:true`), so
-  provisioning, the settings save and KB re-ingest can't drift out of the shape the
-  bmai edge verifies.
+  provisioning, the settings save and KB re-train can't drift out of the shape the
+  bmai edge verifies. The ONE knowledge write path is `knowledge_sources` (never the
+  old `kb_snapshot`, which the edge ignored).
+- **Grounded knowledge is deterministic and bounded** — `app/lib/kbSnapshot.ts` compresses
+  products/policies/pages into ≤40 sources, ≤20,000 chars each, ≤40,000 total (policies →
+  products → pages, whole items, "+N more" note). Training state lives on `ShopTenant.kb*`
+  and is shown on Home / Store connection; ingest errors are persisted, never swallowed.
 - **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"bro"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
 - **Every change ships a test** — `test/**`, `npm test`. Assert the denied/failure path too.

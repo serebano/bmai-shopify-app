@@ -1,4 +1,6 @@
 {
   "launcher_label": "咨询我们",
+  "launcher_aria_label": "打开店铺助手聊天",
+  "launcher_title": "与我们的助手聊天",
   "assistant_name": "助手"
 }

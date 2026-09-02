@@ -1,33 +1,68 @@
 # App Store listing — content skeleton (localized ×14)
 
 The Shopify App Store listing must be **localized into 14 locales** (Built-for-Shopify).
-Draft copy lives under `listing/` — one JSON per locale, same keys. Screenshots and
-the demo video are owner-provided assets (capture on the best fleet iPhone/desktop).
+The copy lives under `listing/` — one JSON per locale, same keys — and is **derived from
+the canonical store record** (`GET https://busymate.ai/api/store/apps/busymate-ai-shopify`,
+see [`STORE-SINGLE-SOURCE.md`](./STORE-SINGLE-SOURCE.md)). Screenshots and the demo
+screencast are owner-provided assets (capture on the best fleet iPhone/desktop).
 
 ## Locales (14 Tier-1)
 
 `en · es · pt-BR · fr · de · it · ru · ro · tr · ar · zh-Hans · hi · ja · ko`
 (RTL for `ar`). Shopify storefront/extension locale codes use `zh-CN` for `zh-Hans`.
+The same 14 locales exist on the canonical record (`set_store_app_locale` on
+`busymate.ai/mcp`) so `busymate.ai/store` and the Shopify listing say the same thing.
 
-## Listing fields (per locale)
+## Listing fields (per locale) → Partner Dashboard field
 
-| Field | Notes |
-|---|---|
-| `app_name` | "Busymate AI" (brand constant; tagline localizes) |
-| `tagline` | ≤ 62 chars — "Grounded, order-aware AI support for your store" (no guarantees / superlatives) |
-| `intro` | ≤ 100 chars |
-| `details` | Long description — trust / multilang / access wedges |
-| `feature_bullets` | The 7 MVP features |
-| `demo_store_url` | Reviewer test store (owner-gated) |
-| `pricing_summary` | Pay-per-resolution, capped, never-disable-at-cap |
-| `privacy_url` / `faq_url` | Data handling + least-privilege scopes |
+| Key | Partner field | Limit | Notes |
+|---|---|---|---|
+| `app_name` | App name | 30 | "Busymate AI" (brand constant) |
+| `tagline` | Subtitle (Discovery) | 62 | = the record's tagline (drift-checked) |
+| `intro` | Introduction | 100 | = paragraph 1 of the record's description (drift-checked) |
+| `details` | App details | 500 | = paragraph 2 of the record's description (drift-checked) |
+| `feature_bullets` | Features | 3–5 × 80 | = the record's "What it does" bullets |
+| `pricing_summary` | — (busymate.ai store page only) | — | the ONLY field that may talk about plans |
+| `privacy_url` | Privacy policy URL | — | `https://store.busymate.ai/legal/privacy` (= record `privacyUrl`, drift-checked) |
+| `faq_url` | FAQ URL | — | `https://store.busymate.ai/legal/faq` |
+
+Pricing plans are NOT in these files — `listing/pricing.json` is regenerated from the record
+by `npm run listing:sync` and is the source-of-record for the Partner "Pricing details" /
+App Pricing plans.
+
+## Copy rules (App Store requirements, enforced by `test/listing-copy.test.ts`)
+
+- **4.2.3 — pricing only in Pricing details.** `intro`, `details` and `feature_bullets`
+  carry no pricing words (pay, price, cap, trial, free, $ …). The editor's REVIEW TIP
+  flags even the word "pay". Plans live in `pricing_summary` / `listing/pricing.json`.
+- **4.3.3 / 4.4.1 — no statistics or data.** No numerals anywhere in the partner-form
+  fields, in any script — a language count ("14 languages") is data; say "in the
+  shopper's language" instead.
+- **4.3.x — factual copy.** No guarantees, no superlatives, no competitor-flaw
+  positioning. Grounding is described as "answers only from your own products, policies
+  and store content, with sources, and says when it is not sure" — never "no
+  hallucinations". Claim only what the shipped product does.
+- Every locale is a **real translation** (not an English placeholder) and links the same
+  legal pages; `ar` copy is RTL-safe (Arabic sentences, Latin only for the brand name).
 
 ## Positioning (the three wedges)
 
-- **TRUST** — grounded, source-cited answers (refuse-when-unsure) + honest pricing.
-- **MULTILANG** — 14 locales + RTL, auto-detected (uncontested in the category).
-- **ACCESS** — enterprise-grade autonomous resolution at an honest SMB price,
-  self-serve, no demo wall.
+- **TRUST** — answers only from the store's own content, with sources; says when unsure.
+- **MULTILANG** — replies in the shopper's language, RTL included (uncontested in the category).
+- **ACCESS** — enterprise-grade autonomous resolution at an honest SMB price, self-serve,
+  no demo wall (the price itself is stated only in Pricing details).
+
+## Change flow
+
+1. Edit the canonical record over MCP on `busymate.ai/mcp` — `upsert_store_app`
+   (`description_md` paragraph 1 = intro, paragraph 2 = details, then the bullets and the
+   Pricing section; `privacy_url`), `set_store_app_pricing`, `set_store_app_locale` ×14.
+   Never a backdoor DB write.
+2. Update `listing/en.json` + the 13 locale files in the same change; `npm run listing:sync`
+   regenerates `listing/pricing.json`.
+3. `npm run drift-check` (must be green) + `npm test` (`listing-copy`, `listing-drift`,
+   `naming`, `storeListing` cover the copy).
+4. Hand-apply the copy in the Partner Dashboard listing editor (Shopify has no API for it).
 
 ## Listing in the Busymate AI directory (optional)
 
@@ -38,8 +73,8 @@ directory `install_url` points at the live App Store page.
 
 ## Assets checklist (owner-provided)
 
-- [ ] App icon (1200×1200)
-- [ ] Feature banner
-- [ ] 3–6 screenshots (the merchant admin + a live storefront resolution)
-- [ ] Demo video (mp4, H.264 — plays on iPhone)
-- [ ] Demo store + reviewer credentials
+- [x] App icon (1200×1200, `listing/assets/icon-1200.png`)
+- [ ] Feature image (1600×900) — real widget UI, no pricing text, no Shopify wordmark, no counts
+- [ ] 3–6 desktop screenshots (1600×900) + 3 mobile — each a different view, browser chrome cropped
+- [ ] Setup screencast (3–8 min, English; install → onboarding → embed → storefront flow), mp4/H.264
+- [ ] Demo store (`busymate-ai-demo-store.myshopify.com`) + test customer/order in the testing instructions

@@ -26,14 +26,15 @@ const STORE_API_KEY =
   "sb_publishable_2YznQoTuNKXLmOAMj-b65w_iulNzXIX";
 
 // Fail-open fallback: a SNAPSHOT of the record's live values (sourced from
-// store_apps 2026-08-29, app 1d27d3df-1703-4ed2-80a5-523f3028d54d) — used only
+// store_apps 2026-09-02, app 1d27d3df-1703-4ed2-80a5-523f3028d54d) — used only
 // when the store API is unreachable. Never invent copy here; refresh it from
-// the record if it ever needs touching.
+// the record if it ever needs touching (test/storeListing.test.ts pins it to
+// listing/en.json, which is drift-checked against the record).
 const SNAPSHOT: StoreListing = {
   slug: STORE_APP_SLUG,
   name: "Busymate AI",
   tagline: "Grounded, order-aware AI support for your store",
-  privacy_url: "https://busymate.ai/legal/privacy",
+  privacy_url: "https://store.busymate.ai/legal/privacy",
 };
 
 export function storePageUrl(listing: StoreListing): string {
