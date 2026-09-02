@@ -31,6 +31,7 @@ import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
 import { buildKnowledgeForShop } from "./lib/kbFetch";
+import { launchIdentityRegistration } from "./lib/identity";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
@@ -166,7 +167,7 @@ function liveProvisionDeps(): ProvisionDeps {
         where: { shop },
         // connectorId is read back so a best-effort re-upsert that doesn't re-echo
         // the id preserves it instead of nulling the "connector registered" state.
-        select: { bmaiTenantId: true, customDomain: true, connectorId: true },
+        select: { bmaiTenantId: true, customDomain: true, connectorId: true, identityProviderId: true },
       }),
     saveTenant: async (shop, patch) => {
       const slug = patch.slug ?? shopToSlug(shop);
@@ -185,6 +186,10 @@ function liveProvisionDeps(): ProvisionDeps {
     // Train on the store in the same publish (Admin GraphQL through the refreshing
     // offline session). A failure is recorded as kbError, never blocks going live.
     buildKnowledge: buildKnowledgeForShop,
+    // Register this host's launch-JWT issuer as the tenant's visitor identity
+    // provider (#2132 FAIL A) — only when the signing key exists (== /api/bmai/status
+    // launchIdentity), so a provider is never registered for tokens we cannot mint.
+    launchIdentity: launchIdentityRegistration(),
   };
 }
 

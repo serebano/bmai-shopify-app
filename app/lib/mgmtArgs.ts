@@ -55,3 +55,50 @@ export function publishArgs(
     confirm: true,
   };
 }
+
+/**
+ * `upsert_tenant_identity_provider` — proof-of-shop + the PUBLIC verification
+ * metadata of this host's launch tokens (#2132 FAIL A). One provider per store,
+ * bound to the store by the `shop` tenant claim; `provider_id` re-targets the
+ * SAME row on every idempotent re-run (a fresh id per run would register
+ * duplicate providers for one issuer). `delegated_access` mirrors the
+ * connector's delegation readiness: only a host that can verify actor tokens
+ * may let an identified shopper's session authorize delegated order tools.
+ */
+export interface IdentityProviderRegistration {
+  issuer: string;
+  jwksUri: string;
+  identityEndpointUrl: string;
+  audience: string;
+  tenantClaim: string;
+  maxTokenAgeSeconds: number;
+}
+
+export function identityProviderArgs(
+  proof: PartnerProof | null,
+  tenantId: string | null | undefined,
+  shop: string,
+  reg: IdentityProviderRegistration,
+  opts: { providerId?: string | null; delegatedAccess: boolean },
+): Record<string, unknown> {
+  return {
+    ...proofArgs(proof),
+    tenant_id: tenantId,
+    ...(opts.providerId ? { provider_id: opts.providerId } : {}),
+    label: "Shopify customer accounts",
+    issuer: reg.issuer,
+    jwks_uri: reg.jwksUri,
+    audiences: [reg.audience],
+    tenant_claim: reg.tenantClaim,
+    tenant_claim_value: shop,
+    subject_claim: "sub",
+    allowed_algs: ["ES256"],
+    max_token_age_seconds: reg.maxTokenAgeSeconds,
+    identity_endpoint_url: reg.identityEndpointUrl,
+    login_url: `https://${shop}/account/login`,
+    account_url: `https://${shop}/account`,
+    delegated_access: opts.delegatedAccess,
+    enabled: true,
+    confirm: true,
+  };
+}

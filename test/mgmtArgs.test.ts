@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { brandingArgs, publishArgs } from "../app/lib/mgmtArgs";
+import { brandingArgs, identityProviderArgs, publishArgs } from "../app/lib/mgmtArgs";
 import type { PartnerProof } from "../app/lib/partnerProof";
 
 /**
@@ -65,5 +65,33 @@ describe("mgmt call-arg shape (proof-signed + confirm)", () => {
     expect(args).not.toHaveProperty("proof");
     expect(args).not.toHaveProperty("partner");
     expect(args).toMatchObject({ tenant_id: "t_1", confirm: true });
+  });
+});
+
+describe("identityProviderArgs (#2132 — the launch-JWT provider registration)", () => {
+  const REG = {
+    issuer: "https://store.busymate.ai",
+    jwksUri: "https://store.busymate.ai/.well-known/jwks.json",
+    identityEndpointUrl: "https://store.busymate.ai/identity",
+    audience: "bmai-support-launch",
+    tenantClaim: "shop",
+    maxTokenAgeSeconds: 120,
+  };
+  it("threads proof-of-shop + confirm, binds the provider to the shop via the `shop` claim, ES256 only, tenant-owned login/account URLs", () => {
+    const args = identityProviderArgs(PROOF, "t_1", "acme.myshopify.com", REG, { delegatedAccess: true });
+    expect(args).toMatchObject({
+      partner: "shopify", shop: "acme.myshopify.com", proof: "deadbeef", ts: PROOF.ts, tenant_id: "t_1",
+      label: "Shopify customer accounts", issuer: REG.issuer, jwks_uri: REG.jwksUri, audiences: ["bmai-support-launch"],
+      tenant_claim: "shop", tenant_claim_value: "acme.myshopify.com", subject_claim: "sub", allowed_algs: ["ES256"],
+      max_token_age_seconds: 120, identity_endpoint_url: REG.identityEndpointUrl,
+      login_url: "https://acme.myshopify.com/account/login", account_url: "https://acme.myshopify.com/account",
+      delegated_access: true, enabled: true, confirm: true,
+    });
+    expect(args).not.toHaveProperty("provider_id");
+  });
+  it("re-targets an existing provider by provider_id", () => {
+    const args = identityProviderArgs(PROOF, "t_1", "acme.myshopify.com", REG, { providerId: "p_1", delegatedAccess: false });
+    expect(args.provider_id).toBe("p_1");
+    expect(args.delegated_access).toBe(false);
   });
 });

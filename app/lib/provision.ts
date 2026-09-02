@@ -27,7 +27,7 @@
  */
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
-import { brandingArgs, publishArgs } from "./mgmtArgs";
+import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderRegistration } from "./mgmtArgs";
 import type { KnowledgeBuild, KnowledgeCounts } from "./kbSnapshot";
 import { isKnowledgeRejection, publishOptionsFor, trainingPatch, type TrainingPatch } from "./kbTrain";
 
@@ -48,6 +48,8 @@ export interface TenantRecord {
   bmaiTenantId?: string | null;
   customDomain?: string | null;
   connectorId?: string | null;
+  /** The tenant's visitor identity provider registered for this store (idempotent re-target). */
+  identityProviderId?: string | null;
   provisionState?: string | null;
 }
 
@@ -55,8 +57,15 @@ export type TenantPatch = {
   slug?: string;
   bmaiTenantId?: string | null;
   connectorId?: string | null;
+  identityProviderId?: string | null;
   provisionState?: "provisioning" | "published" | "suspended" | "error";
   provisionError?: string | null;
+  /**
+   * A PUBLISHED tenant whose order tools / customer sign-in are NOT live in the
+   * published revision (the connector or identity provider was registered but not
+   * assigned — #2132 FAIL A). Null when everything registered is live.
+   */
+  provisionWarning?: string | null;
   publishedAt?: Date | null;
 } & Partial<TrainingPatch>;
 
@@ -101,6 +110,15 @@ export interface ProvisionDeps {
    * soft failure — recorded as kbError + warned, the tenant still goes live.
    */
   buildKnowledge?: (shop: string) => Promise<KnowledgeBuild>;
+  /**
+   * The launch-identity provider this host publishes (app/lib/identity.ts
+   * `launchIdentityRegistration`): issuer / JWKS / one-time mint endpoint of the
+   * ES256 launch JWT the storefront widget hands to Busymate AI. null (or omitted)
+   * when LAUNCH_SIGNING_KEY is not configured — then NO provider is registered
+   * (the host could not mint a token, so a registered provider would be
+   * green-while-dead) and shoppers stay anonymous with public tools only.
+   */
+  launchIdentity?: IdentityProviderRegistration | null;
 }
 
 export interface TrainingSummary {
@@ -114,6 +132,8 @@ export interface ProvisionOutcome {
   ok: boolean;
   tenantId: string | null;
   connectorId: string | null;
+  /** The registered visitor identity provider (null when none / not configured). */
+  identityProviderId: string | null;
   error?: string;
   /** Ordered list of MCP tool names invoked — asserted by the seam test. */
   calls: string[];
@@ -146,9 +166,11 @@ export const CONNECTOR_POLICIES = {
 /**
  * Run the full lifecycle:
  *   provision_partner_tenant (proof; reactivates an archived tenant on reinstall)
- *   → set_tenant_branding → add_tenant_embed_origin (proof) → upsert connector
+ *   → set_tenant_branding (new tenant only) → add_tenant_embed_origin (proof)
+ *   → upsert connector (+ confirm_tools) → upsert identity provider (launch JWT)
  *   → buildKnowledge (products/policies/pages → knowledge_sources)
  *   → publish_tenant_runtime (origins + knowledge — ONE publish)
+ *   → prove the connector + provider are ASSIGNED in the published revision
  */
 export async function runProvisionLifecycle(
   session: ProvisionSession,
@@ -184,7 +206,7 @@ export async function runProvisionLifecycle(
   });
   if (!provisioned.ok) {
     await deps.saveTenant(shop, { provisionState: "error", provisionError: provisioned.error });
-    return { ok: false, tenantId: null, connectorId: null, error: provisioned.error, calls, warnings, reactivated: false, training: null };
+    return { ok: false, tenantId: null, connectorId: null, identityProviderId: null, error: provisioned.error, calls, warnings, reactivated: false, training: null };
   }
   const tenantId = provisioned.data?.tenant_id ?? existing?.bmaiTenantId ?? null;
   // REINSTALL: app/uninstalled archived the tenant (suspend_tenant); under a valid
@@ -238,6 +260,10 @@ export async function runProvisionLifecycle(
     auth_mode: "none",
     delegation_mode: delegationMode,
     tool_access: connectorToolAccess(deps.delegationReady),
+    // Every DELEGATED write is confirm-gated on the platform (#2132): the
+    // assistant parks the call until the shopper approves it in chat. Registered
+    // in lockstep with the delegated tier — no delegated tools, nothing to gate.
+    ...(deps.delegationReady ? { confirm_tools: [...CONNECTOR_POLICIES.confirm_tools] } : {}),
     confirm: true,
   });
   // The tool returns { ok, id, connector: { id } } — capture the connector's id.
@@ -247,6 +273,26 @@ export async function runProvisionLifecycle(
   // "connector registered" state on every re-auth. Fall back to the existing id.
   const connectorId =
     connector.data?.id ?? connector.data?.connector?.id ?? existing?.connectorId ?? null;
+
+  // 5b) Register this host as the tenant's VISITOR IDENTITY PROVIDER (#2132 FAIL A).
+  // The storefront widget fetches a launch JWT from /identity (App Proxy, HMAC-
+  // verified customer id) and hands it to Busymate AI's support-launch, which
+  // trusts ONLY a provider registered for the token's issuer. Without this step
+  // every signed-in shopper fell back to anonymous, so the identified/delegated
+  // order tools could never be offered. `delegated_access` mirrors the connector's
+  // delegation readiness. Idempotent: re-targets the persisted provider id.
+  // Best-effort like the connector: a denial is recorded, the tenant still goes live.
+  let identityProviderId: string | null = existing?.identityProviderId ?? null;
+  if (deps.launchIdentity) {
+    const provider = await soft<{ provider?: { id?: string }; id?: string }>(
+      "upsert_tenant_identity_provider",
+      identityProviderArgs(proof, tenantId, shop, deps.launchIdentity, {
+        providerId: identityProviderId,
+        delegatedAccess: deps.delegationReady,
+      }),
+    );
+    identityProviderId = provider.data?.provider?.id ?? provider.data?.id ?? identityProviderId;
+  }
 
   // 6) Train — build the store knowledge (products / policies / pages) so the
   //    publish below carries `knowledge_sources`. SOFT: a failure is persisted as
@@ -284,23 +330,58 @@ export async function runProvisionLifecycle(
     await deps.saveTenant(shop, {
       bmaiTenantId: tenantId,
       connectorId,
+      identityProviderId,
       provisionState: "error",
       provisionError: `publish_tenant_runtime: ${published.error ?? "failed"}`,
       ...(training ?? {}),
     });
-    return { ok: false, tenantId, connectorId, error: published.error, calls, warnings, reactivated, training: trainingSummary };
+    return { ok: false, tenantId, connectorId, identityProviderId, error: published.error, calls, warnings, reactivated, training: trainingSummary };
   }
+
+  // 8) PROVE the order tools are live (#2132 FAIL A). A registered connector /
+  //    provider is NOT live until the published revision ASSIGNS it; the publish
+  //    result echoes what it assigned (`connector_ids` / `identity_provider_ids`).
+  //    A registration the revision does not carry — or a platform that does not
+  //    echo assignments at all — is reported as a warning the merchant can see,
+  //    never a silent "Connected" over an assistant that cannot see orders.
+  const provisionWarning = publishedRuntimeGaps(published.data, { connectorId, identityProviderId });
+  if (provisionWarning) warnings.push(provisionWarning);
 
   await deps.saveTenant(shop, {
     bmaiTenantId: tenantId,
     connectorId,
+    identityProviderId,
     provisionState: "published",
     provisionError: null,
+    provisionWarning,
     publishedAt: new Date(),
     ...(training ?? {}),
   });
 
-  return { ok: true, tenantId, connectorId, calls, warnings, reactivated, training: trainingSummary };
+  return { ok: true, tenantId, connectorId, identityProviderId, calls, warnings, reactivated, training: trainingSummary };
+}
+
+/**
+ * The published-revision assignment check (#2132 FAIL A): which registered
+ * capabilities the publish result does NOT carry. Returns the merchant-facing
+ * warning, or null when every registration is live. An absent echo counts as
+ * NOT live (fail closed — "couldn't check" is never green).
+ */
+export function publishedRuntimeGaps(
+  result: unknown,
+  registered: { connectorId: string | null; identityProviderId: string | null },
+): string | null {
+  const r = (result && typeof result === "object" ? result : {}) as { connector_ids?: unknown; identity_provider_ids?: unknown };
+  const ids = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+  const gaps: string[] = [];
+  if (registered.connectorId && !ids(r.connector_ids).includes(registered.connectorId)) {
+    gaps.push("order tools (the store connection is registered but not assigned to the published assistant)");
+  }
+  if (registered.identityProviderId && !ids(r.identity_provider_ids).includes(registered.identityProviderId)) {
+    gaps.push("customer sign-in (the identity provider is registered but not assigned to the published assistant)");
+  }
+  if (!gaps.length) return null;
+  return `Not live yet: ${gaps.join("; ")}. Shoppers get product and policy answers only — reconnect after the Busymate AI platform update, or contact support.`;
 }
 
 /**
@@ -336,6 +417,7 @@ export async function provisionOnInstall(
           ok: true,
           tenantId: existing.bmaiTenantId,
           connectorId: null,
+          identityProviderId: null,
           calls: [],
           warnings: [`provisionOnInstall raced; tenant already provisioned: ${message}`],
           reactivated: false,
@@ -354,6 +436,7 @@ export async function provisionOnInstall(
       ok: false,
       tenantId: null,
       connectorId: null,
+      identityProviderId: null,
       error: message,
       calls: [],
       warnings: [`provisionOnInstall threw: ${message}`],

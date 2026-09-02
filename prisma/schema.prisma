@@ -41,8 +41,14 @@ model ShopTenant {
   bmaiTenantId   String?  // tenants.id in the bmai control plane (via MCP)
   slug           String?  @unique // <slug>.busymate.ai serving host
   connectorId    String?  // mcp_servers row id for this store's Admin connector
+  /// The tenant's visitor identity provider registered for this store's launch JWT
+  /// (#2132): re-targeted on every idempotent lifecycle run, never re-created.
+  identityProviderId String?
   provisionState String   @default("pending") // pending | provisioning | published | suspended | error
   provisionError String?
+  /// A published tenant whose registered order tools / customer sign-in are NOT in
+  /// the published revision (#2132) — surfaced on Home + Store connection.
+  provisionWarning String?
   customDomain   String?  // storefront custom domain, added to the embed-origin allowlist
   publishedAt    DateTime?
   /// Training state (#2110 grounding): what the assistant was last trained on via
