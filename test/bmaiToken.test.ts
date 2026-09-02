@@ -23,7 +23,7 @@ describe("bmai durable token provider", () => {
     const now = () => t;
     const fetchImpl = vi.fn(async () => tokenResponse("access-1", "refresh-2", 3600));
     const p = createTokenProvider({
-      mcpUrl: "https://mcp.busymate.dev",
+      mcpUrl: "https://busymate.ai/mcp",
       seedClientId: "cid", seedRefreshToken: "refresh-1",
       fetchImpl: fetchImpl as unknown as typeof fetch, now, skewSeconds: 120,
     });
@@ -39,7 +39,7 @@ describe("bmai durable token provider", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     // the token endpoint + grant were correct
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://mcp.busymate.dev/token");
+    expect(url).toBe("https://busymate.ai/mcp/token");
     expect(String(init.body)).toContain("grant_type=refresh_token");
     expect(String(init.body)).toContain("refresh_token=refresh-1");
   });
@@ -50,7 +50,7 @@ describe("bmai durable token provider", () => {
     const fetchImpl = vi.fn(async () => { calls++; return tokenResponse(`access-${calls}`, `refresh-next-${calls}`, 3600); });
     let t = 0;
     const p = createTokenProvider({
-      mcpUrl: "https://mcp.busymate.dev/",
+      mcpUrl: "https://busymate.ai/mcp/",
       seedClientId: "cid", seedRefreshToken: "refresh-seed",
       store, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => t, skewSeconds: 0,
     });
@@ -67,7 +67,7 @@ describe("bmai durable token provider", () => {
     const store = memStore({ clientId: "cid", refreshToken: "stored-rt" });
     const fetchImpl = vi.fn(async () => tokenResponse("a", "b"));
     const p = createTokenProvider({
-      mcpUrl: "https://mcp.busymate.dev",
+      mcpUrl: "https://busymate.ai/mcp",
       seedClientId: "cid", seedRefreshToken: "stale-seed-rt",
       store, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
     });
@@ -79,7 +79,7 @@ describe("bmai durable token provider", () => {
   it("falls back to a static bootstrap token when no refresh creds are set", async () => {
     const fetchImpl = vi.fn();
     const p = createTokenProvider({
-      mcpUrl: "https://mcp.busymate.dev", staticToken: "boot-token",
+      mcpUrl: "https://busymate.ai/mcp", staticToken: "boot-token",
       fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
     });
     expect(await p.getAccessToken()).toBe("boot-token");
@@ -89,14 +89,14 @@ describe("bmai durable token provider", () => {
   it("throws a clear re-authorize error when the refresh chain is revoked", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "invalid_grant", error_description: "refresh token already used (rotated) — chain revoked" }) }) as unknown as Response);
     const p = createTokenProvider({
-      mcpUrl: "https://mcp.busymate.dev", seedClientId: "cid", seedRefreshToken: "revoked",
+      mcpUrl: "https://busymate.ai/mcp", seedClientId: "cid", seedRefreshToken: "revoked",
       fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
     });
     await expect(p.getAccessToken()).rejects.toBeInstanceOf(BmaiCredentialError);
   });
 
   it("throws when NO credential of any kind is configured", async () => {
-    const p = createTokenProvider({ mcpUrl: "https://mcp.busymate.dev", now: () => 0 });
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", now: () => 0 });
     await expect(p.getAccessToken()).rejects.toBeInstanceOf(BmaiCredentialError);
   });
 });

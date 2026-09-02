@@ -1,12 +1,12 @@
 /**
  * Live end-to-end verification of the tenant-provisioning path against the REAL
- * bmdev edge (mcp.busymate.dev). Reuses the app's OWN modules — callMcpTool (durable
+ * Busymate AI edge (busymate.ai/mcp). Reuses the app's OWN modules — callMcpTool (durable
  * token provider + JSON-RPC), runProvisionLifecycle, buildPartnerProof — so it
  * exercises the exact proof + credential + lifecycle code the install callback runs.
  * The tenant STORE is in-memory (no ShopTenant row) so the app's tables stay clean.
  *
- * Env (sourced from /etc/bmai-shopify-app/env on the host): BMAI_MCP_URL,
- * BMAI_PARTNER_PROOF_SECRET, BMAI_PROVISION_CLIENT_ID/REFRESH_TOKEN, DATABASE_URL.
+ * Env (sourced from /etc/bmai-shopify-app/env on the host): BMAI_MGMT_MCP_URL,
+ * BMAI_PARTNER_PROOF_SECRET, BMAI_MGMT_CLIENT_ID/REFRESH_TOKEN, DATABASE_URL.
  * Prints only non-secret status. Usage:
  *   TEST_SHOP=<shop> node /tmp/verify.mjs          # provision
  *   TEST_SHOP=<shop> ACTION=delete node /tmp/verify.mjs  # teardown

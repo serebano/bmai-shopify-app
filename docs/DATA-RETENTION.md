@@ -53,7 +53,7 @@ on failure so Shopify retries — they never silently 200.
 ## Sub-processors
 
 - **Shopify** — the platform (store data, Billing, webhooks).
-- **Busymate AI** (`busymate.ai`, `mcp.busymate.dev`) — the AI tenant + control
+- **Busymate AI** (`busymate.ai`, including `busymate.ai/mcp`) — the AI tenant + control
   plane, reached only via MCP (`all-ops-via-MCP`).
 - The app's own **Postgres** host — an independent failure domain; stores only the
   columns above.

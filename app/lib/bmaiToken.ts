@@ -1,7 +1,7 @@
 /**
  * The app's DURABLE bmai provisioning credential.
  *
- * The bmdev MCP surface (mcp.busymate.dev) authenticates every `tools/call` with a
+ * The Busymate AI MCP surface (busymate.ai/mcp) authenticates every `tools/call` with a
  * short-lived (1h) OAuth 2.1 access token. A headless server cannot re-run the
  * browser consent every hour, so the durable credential is an OAuth REFRESH TOKEN
  * (rotating) obtained ONCE via the DCR + PKCE authorization-code flow. This provider
@@ -10,10 +10,10 @@
  * refresh — the previous one is revoked) so a restart survives.
  *
  * Env (set on the app host, value-blind):
- *   BMAI_PROVISION_CLIENT_ID      — the DCR client_id the refresh token belongs to
- *   BMAI_PROVISION_REFRESH_TOKEN  — the SEED refresh token (used once, then the
+ *   BMAI_MGMT_CLIENT_ID           — the DCR client_id the refresh token belongs to
+ *   BMAI_MGMT_REFRESH_TOKEN       — the SEED refresh token (used once, then the
  *                                   rotated value is read from the store)
- *   BMAI_PROVISION_TOKEN          — OPTIONAL static access token (bootstrap/testing);
+ *   BMAI_MGMT_TOKEN               — OPTIONAL static access token (bootstrap/testing);
  *                                   used only when no refresh credential is set
  *
  * A `TokenStore` (Prisma-backed in prod) persists the rotating refresh token; the
@@ -83,7 +83,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
   async function refresh(): Promise<string> {
     if (!current) {
       throw new BmaiCredentialError(
-        "no bmai provisioning refresh credential (set BMAI_PROVISION_CLIENT_ID + BMAI_PROVISION_REFRESH_TOKEN)",
+        "no Busymate AI refresh credential configured",
       );
     }
     const res = await fetchImpl(tokenEndpoint(deps.mcpUrl), {
@@ -106,7 +106,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       throw new BmaiCredentialError(
         `refresh_token grant failed (${res.status} ${json.error ?? ""}${
           json.error_description ? ": " + json.error_description : ""
-        }) — re-authorize the app (DCR + PKCE) and reseed BMAI_PROVISION_REFRESH_TOKEN`,
+        }) — re-authorize the app (DCR + PKCE) and reseed the Busymate AI refresh token`,
       );
     }
     // Persist the ROTATED refresh token BEFORE returning (the old one is now revoked).
@@ -129,7 +129,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       if (current) return refresh();
       if (deps.staticToken) return deps.staticToken; // bootstrap/testing fallback
       throw new BmaiCredentialError(
-        "no bmai provisioning credential configured (set BMAI_PROVISION_REFRESH_TOKEN + BMAI_PROVISION_CLIENT_ID, or a bootstrap BMAI_PROVISION_TOKEN)",
+        "no Busymate AI credential configured (refresh credential or bootstrap token required)",
       );
     },
   };

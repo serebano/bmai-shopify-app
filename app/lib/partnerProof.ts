@@ -1,7 +1,7 @@
 /**
  * PROOF-OF-SHOP — the app's half of the bmdev partner-tenant authorization.
  *
- * The bmdev backend (mcp.busymate.dev) authorizes `provision_partner_tenant`, the
+ * The Busymate AI backend (busymate.ai/mcp) authorizes `provision_partner_tenant`, the
  * GDPR seams, and the teardown/embed-origin tools by a PROOF-OF-SHOP: an HMAC over
  * the shop, computed here with a shared secret the app holds AND bmdev holds in its
  * Vault (`SHOPIFY_PARTNER_HMAC`). This module computes the EXACT signature bmdev's
@@ -26,7 +26,7 @@ import { createHmac } from "node:crypto";
 
 /** The canonical proof version prefix — MUST equal bmdev PROOF_VERSION. */
 export const PROOF_VERSION = "partner-shop-v1";
-/** The env var holding the shared HMAC secret (== bmdev Vault `SHOPIFY_PARTNER_HMAC`). */
+/** The shared HMAC secret (== Busymate AI Vault `SHOPIFY_PARTNER_HMAC`). */
 export const PROOF_SECRET_ENV = "BMAI_PARTNER_PROOF_SECRET";
 
 /** The proof fields an MCP partner-tool call carries. */

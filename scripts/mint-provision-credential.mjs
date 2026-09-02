@@ -8,19 +8,16 @@
  * non-secret status; the secret refresh token is written to OUT (default 0600 file),
  * never logged.
  *
- * The app needs TWO credentials (the two MCP surfaces are separate RFC-8707
- * resources), each minted against its OWN issuer + resource for the SAME
- * provisioner identity, then routed per-tool by app/bmai.server.ts:
- *   PARTNER (default): ISSUER/RESOURCE=https://mcp.busymate.dev, VAR_PREFIX=BMAI_PROVISION
- *   MGMT: ISSUER/RESOURCE=https://busymate.ai/mcp, VAR_PREFIX=BMAI_MGMT
+ * The app needs ONE credential bound to the Busymate AI MCP resource:
+ * ISSUER/RESOURCE=https://busymate.ai/mcp, VAR_PREFIX=BMAI_MGMT.
  *
  * Requires (owner-gated): SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (the bmai control
  * plane). Env:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   — bmai auth admin API
- *   ISSUER            (default https://mcp.busymate.dev) — the OAuth issuer host
+ *   ISSUER            (default https://busymate.ai/mcp) — the OAuth issuer host
  *   RESOURCE          (default = ISSUER) — the RFC-8707 resource to bind the token to
- *   VAR_PREFIX        (default BMAI_PROVISION) — output env var prefix
- *   OAUTH_ORIGIN      (default https://dash.busymate.dev — an allowlisted origin)
+ *   VAR_PREFIX        (default BMAI_MGMT) — output env var prefix
+ *   OAUTH_ORIGIN      (default https://busymate.ai — an allowlisted origin)
  *   PROVISIONER_EMAIL (default bmai-shopify-provisioner@svc.example.com — set your own)
  *   OUT               (default ./bmai-cred.env — chmod 0600)
  *
@@ -34,10 +31,10 @@ import { writeFileSync } from "node:fs";
 
 const URL_ = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MCP = process.env.ISSUER || "https://mcp.busymate.dev";
+const MCP = process.env.ISSUER || "https://busymate.ai/mcp";
 const RESOURCE = process.env.RESOURCE || MCP;
-const VAR_PREFIX = process.env.VAR_PREFIX || "BMAI_PROVISION";
-const ORIGIN = process.env.OAUTH_ORIGIN || "https://dash.busymate.dev";
+const VAR_PREFIX = process.env.VAR_PREFIX || "BMAI_MGMT";
+const ORIGIN = process.env.OAUTH_ORIGIN || "https://busymate.ai";
 const EMAIL = process.env.PROVISIONER_EMAIL || "bmai-shopify-provisioner@svc.example.com";
 const OUT = process.env.OUT || "./bmai-cred.env";
 const REDIRECT = "http://127.0.0.1:8765/cb";
