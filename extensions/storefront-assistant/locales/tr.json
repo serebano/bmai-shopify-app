@@ -1,4 +1,6 @@
 {
   "launcher_label": "Bize sorun",
+  "launcher_aria_label": "Mağaza asistanı sohbetini aç",
+  "launcher_title": "Asistanımızla sohbet edin",
   "assistant_name": "Asistan"
 }

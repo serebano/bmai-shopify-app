@@ -1,0 +1,36 @@
+/**
+ * The metering cursor persisted in `BillingState.lastMeteredCursor` — one string
+ * column carrying the upstream usage cursor, the billing-cycle key and the
+ * resolutions already counted in that cycle (so the plan's included allowance
+ * is applied per cycle). Legacy rows hold a bare cursor string; that is read as
+ * `{ cursor, cycleKey: null, cycleResolutions: 0 }`. Pure + tested.
+ */
+export interface MeterCursor {
+  cursor: string | null;
+  /** Billing-cycle identity (the Partner API `currentBillingCycle.startTime`). */
+  cycleKey: string | null;
+  /** Resolutions counted so far in `cycleKey` (billable or not). */
+  cycleResolutions: number;
+}
+
+const EMPTY: MeterCursor = { cursor: null, cycleKey: null, cycleResolutions: 0 };
+
+export function parseMeterCursor(raw: string | null | undefined): MeterCursor {
+  if (!raw) return { ...EMPTY };
+  if (!raw.startsWith("{")) return { ...EMPTY, cursor: raw };
+  try {
+    const j = JSON.parse(raw) as Partial<Record<keyof MeterCursor, unknown>> & { v?: unknown };
+    if (j.v !== 1) return { ...EMPTY, cursor: raw };
+    return {
+      cursor: typeof j.cursor === "string" && j.cursor ? j.cursor : null,
+      cycleKey: typeof j.cycleKey === "string" && j.cycleKey ? j.cycleKey : null,
+      cycleResolutions: typeof j.cycleResolutions === "number" && Number.isFinite(j.cycleResolutions) ? Math.max(0, Math.floor(j.cycleResolutions)) : 0,
+    };
+  } catch {
+    return { ...EMPTY, cursor: raw };
+  }
+}
+
+export function serializeMeterCursor(c: MeterCursor): string {
+  return JSON.stringify({ v: 1, cursor: c.cursor, cycleKey: c.cycleKey, cycleResolutions: c.cycleResolutions });
+}

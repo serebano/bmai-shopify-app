@@ -1,0 +1,9 @@
+{
+  "name": "Asistent Busymate AI",
+  "settings": {
+    "launcher_label": {
+      "label": "Eticheta butonului de chat",
+      "info": "Textul butonului care deschide chatul. Lasă gol pentru a folosi textul tradus implicit în fiecare limbă a magazinului."
+    }
+  }
+}

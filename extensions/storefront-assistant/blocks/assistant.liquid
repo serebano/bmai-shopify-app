@@ -1,50 +1,49 @@
 {%- comment -%}
-  Busymate AI white-label assistant — app-embed block.
+  Busymate AI assistant — app-embed block.
   Mounts the Busymate AI widget on every storefront page. Passes the shop domain +
   whether a customer is logged in (for identified launch). No theme edit required;
-  the merchant enables it in Theme editor → App embeds.
+  the merchant enables it in Theme editor → App embeds (the app's Home page deep-links
+  there with this embed pre-activated).
+
+  i18n: the launcher label, its accessible name and title come from locales/*.json
+  (14 Tier-1 locales) through the `t` filter; the Theme-editor strings from
+  locales/*.schema.json through `t:` keys. A merchant may override the visible label
+  per store in the editor.
+
+  The serving origin and the assistant slug are NOT merchant settings: the slug is
+  derived from the shop's permanent domain (== the tenant slug the app provisions)
+  and the origin is the Busymate AI platform.
 {%- endcomment -%}
 
-{%- comment -%}
-  Derive the fallback slug SEPARATELY so the append/split only builds the default —
-  a merchant-set assistant_slug is used verbatim (the old inline chain corrupted a
-  set value by appending the domain to it and then splitting on '.').
-{%- endcomment -%}
 {%- assign asst_shop_handle = shop.permanent_domain | split: '.' | first -%}
-{%- assign asst_default_slug = 'shop-' | append: asst_shop_handle -%}
-{%- assign asst_slug = block.settings.assistant_slug | default: asst_default_slug -%}
+{%- assign asst_slug = 'shop-' | append: asst_shop_handle -%}
+{%- assign asst_default_label = 'launcher_label' | t -%}
+{%- assign asst_label = block.settings.launcher_label | default: asst_default_label -%}
+{%- assign asst_aria_label = 'launcher_aria_label' | t -%}
+{%- assign asst_title = 'launcher_title' | t -%}
 
 <script
   src="{{ 'assistant.js' | asset_url }}"
   data-shop="{{ shop.permanent_domain }}"
   data-slug="{{ asst_slug }}"
-  data-origin="{{ block.settings.origin | default: 'https://busymate.ai' }}"
-  data-label="{{ block.settings.launcher_label | default: 'Ask us' }}"
+  data-origin="https://busymate.ai"
+  data-label="{{ asst_label | escape }}"
+  data-aria-label="{{ asst_aria_label | escape }}"
+  data-title="{{ asst_title | escape }}"
+  data-locale="{{ request.locale.iso_code }}"
   data-logged-in="{% if customer %}true{% else %}false{% endif %}"
   defer></script>
 
 {% schema %}
 {
-  "name": "Busymate AI assistant",
+  "name": "t:name",
   "target": "body",
   "settings": [
     {
       "type": "text",
-      "id": "assistant_slug",
-      "label": "Assistant slug",
-      "info": "Your store's Busymate AI assistant slug (set automatically on install)."
-    },
-    {
-      "type": "text",
-      "id": "origin",
-      "label": "Serving origin",
-      "default": "https://busymate.ai"
-    },
-    {
-      "type": "text",
       "id": "launcher_label",
-      "label": "Launcher label",
-      "default": "Ask us"
+      "label": "t:settings.launcher_label.label",
+      "info": "t:settings.launcher_label.info"
     }
   ]
 }

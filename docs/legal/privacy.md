@@ -1,13 +1,13 @@
 <!--
   DRAFT privacy policy for the "Busymate AI for Shopify" app. This is app-specific
   (NOT the devtools privacy policy). Published at https://store.busymate.ai/legal/privacy
-  (the URL in listing/*.json and on the canonical store record); have counsel review.
-  Last drafted: 2026-08.
+  (the URL in listing/*.json and on the canonical store record; render with
+  `node scripts/render-legal.mjs`). Have counsel review. Last updated: 2026-09.
 -->
 
 # Busymate AI for Shopify — Privacy Policy
 
-**Effective date:** _to be set on publication_
+**Effective date:** August 29, 2026 (updated September 2, 2026)
 
 This policy explains what data the **Busymate AI for Shopify** app ("the App", "we")
 collects, why, how long we keep it, and the rights you have. It covers two groups of
@@ -27,7 +27,7 @@ official APIs and holds the minimum data needed to run the integration.
   conversation content), the **merchant is the controller** and Busymate AI is a
   **processor** acting on the merchant's instructions.
 
-Contact: **privacy@busymate.ai**.
+Contact: **mr.serebano@gmail.com**.
 
 ## 2. What we collect and why
 
@@ -37,7 +37,7 @@ Contact: **privacy@busymate.ai**.
 | Shopify store domain, shop + tenant identifiers | Run the integration; map the store to its assistant | Contract |
 | Shopify **offline access token** (encrypted at rest) | Call the store's Admin API for the assistant's tools and knowledge-base training | Contract |
 | Staff name/email from the Shopify session | Account operation, support | Contract / legitimate interest |
-| Billing status + plan (no card data) | Usage-based billing via Shopify Billing | Contract |
+| Billing status + plan (no card data) | Plan and usage billing via Shopify App Pricing | Contract |
 
 ### Shopper data (processed on the merchant's behalf)
 | Data | Purpose | Legal basis |
@@ -97,7 +97,7 @@ sensitive personal information, and the right not to be discriminated against fo
 exercising them. We do **not** sell or "share" personal information as those terms are
 defined by the CPRA.
 
-To exercise a right, contact the merchant you interacted with, or **privacy@busymate.ai**.
+To exercise a right, contact the merchant you interacted with, or **mr.serebano@gmail.com**.
 
 ## 7. International transfers
 
@@ -112,6 +112,10 @@ The App is not directed to children and does not knowingly collect data from the
 
 We will update this policy as the App evolves and post the new effective date here.
 
-## 10. Contact
+## 10. Contact and merchant terms
 
-**Busymate AI** — privacy@busymate.ai.
+**Busymate AI** — mr.serebano@gmail.com (we answer privacy requests within 30 days).
+
+Merchants: the [Terms of Service & Data Processing Addendum](https://store.busymate.ai/legal/terms)
+sets out our processor obligations to you (roles, security, sub-processors, breach
+notification, deletion, audit).

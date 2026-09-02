@@ -1,0 +1,176 @@
+import type { LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
+import {
+  Badge,
+  Banner,
+  BlockStack,
+  Card,
+  EmptyState,
+  IndexTable,
+  InlineGrid,
+  Layout,
+  Link,
+  Page,
+  Text,
+} from "@shopify/polaris";
+import { TitleBar } from "@shopify/app-bridge-react";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+import { listTenantConversations, listTenantHandoffs } from "../lib/tenantRead.server";
+
+/** The Busymate AI inbox (auth-gated) where the merchant reads full transcripts. */
+export const INBOX_URL = "https://busymate.ai/console/inbox";
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop }, select: { bmaiTenantId: true, slug: true } });
+  const [conversations, handoffs] = await Promise.all([
+    listTenantConversations(tenant?.bmaiTenantId, 25),
+    listTenantHandoffs(tenant?.bmaiTenantId),
+  ]);
+  return {
+    provisioned: Boolean(tenant?.bmaiTenantId),
+    conversations,
+    handoffs,
+    inboxUrl: INBOX_URL,
+    servingHost: tenant?.slug ? `https://${tenant.slug}.busymate.ai` : null,
+  };
+};
+
+function fmt(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleString() : "—";
+}
+
+export default function ConversationsPage() {
+  const data = useLoaderData<typeof loader>();
+  const convs = data.conversations.rows;
+  const open = data.handoffs.rows;
+  return (
+    <Page>
+      <TitleBar title="Conversations" />
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            {!data.provisioned ? (
+              <Banner tone="warning" title="Your assistant is still being set up">
+                <p>Conversations appear here once provisioning completes (see Home).</p>
+              </Banner>
+            ) : null}
+            {data.handoffs.error ? (
+              <Banner tone="critical" title="Could not load open handoffs">
+                <p>{data.handoffs.error}</p>
+              </Banner>
+            ) : null}
+            {data.conversations.error ? (
+              <Banner tone="critical" title="Could not load conversations">
+                <p>{data.conversations.error}</p>
+              </Banner>
+            ) : null}
+
+            <Card padding="0">
+              <BlockStack gap="0">
+                <div style={{ padding: "var(--p-space-400)" }}>
+                  <InlineGrid columns="1fr auto" alignItems="center">
+                    <Text as="h2" variant="headingMd">
+                      Open human handoffs
+                    </Text>
+                    <Badge tone={open.length ? "attention" : "success"}>{`${open.length} open`}</Badge>
+                  </InlineGrid>
+                </div>
+                {open.length === 0 ? (
+                  <div style={{ padding: "0 var(--p-space-400) var(--p-space-400)" }}>
+                    <Text as="p" tone="subdued">
+                      No shopper is waiting for a human right now. When the assistant is not confident it offers a
+                      handoff; those requests appear here and in your Busymate AI inbox.
+                    </Text>
+                  </div>
+                ) : (
+                  <IndexTable
+                    resourceName={{ singular: "handoff", plural: "handoffs" }}
+                    itemCount={open.length}
+                    selectable={false}
+                    headings={[{ title: "Requested" }, { title: "Status" }, { title: "Reason" }, { title: "Conversation" }]}
+                  >
+                    {open.map((h, i) => (
+                      <IndexTable.Row id={h.id} key={h.id} position={i}>
+                        <IndexTable.Cell>{fmt(h.requestedAt)}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Badge tone="attention">{h.status}</Badge>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>{h.reason ?? "—"}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <code>{h.sessionId ?? "—"}</code>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                )}
+              </BlockStack>
+            </Card>
+
+            <Card padding="0">
+              <BlockStack gap="0">
+                <div style={{ padding: "var(--p-space-400)" }}>
+                  <InlineGrid columns="1fr auto" alignItems="center">
+                    <Text as="h2" variant="headingMd">
+                      Recent conversations
+                    </Text>
+                    <Link url={data.inboxUrl} target="_blank">
+                      Open transcripts in the Busymate AI inbox
+                    </Link>
+                  </InlineGrid>
+                </div>
+                {convs.length === 0 ? (
+                  <EmptyState heading="No conversations yet" image="">
+                    <p>
+                      Once the storefront assistant is on, every shopper conversation is listed here with its start and
+                      last-activity time.
+                    </p>
+                  </EmptyState>
+                ) : (
+                  <IndexTable
+                    resourceName={{ singular: "conversation", plural: "conversations" }}
+                    itemCount={convs.length}
+                    selectable={false}
+                    headings={[{ title: "Started" }, { title: "Last activity" }, { title: "Status" }, { title: "Conversation" }]}
+                  >
+                    {convs.map((c, i) => (
+                      <IndexTable.Row id={c.sessionId} key={c.sessionId} position={i}>
+                        <IndexTable.Cell>{fmt(c.startedAt)}</IndexTable.Cell>
+                        <IndexTable.Cell>{fmt(c.lastActiveAt)}</IndexTable.Cell>
+                        <IndexTable.Cell>{c.live ? <Badge tone="success">Live</Badge> : <Badge>Ended</Badge>}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <code>{c.sessionId}</code>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                )}
+              </BlockStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+        <Layout.Section variant="oneThird">
+          <Card>
+            <BlockStack gap="200">
+              <Text as="h3" variant="headingSm">
+                What is collected
+              </Text>
+              <Text as="p" tone="subdued">
+                Shopper messages and the assistant&apos;s replies, the signed-in shopper&apos;s Shopify customer id (for
+                their own orders only), and any handoff request. Order data is read live from Shopify and not stored by
+                the app. Shoppers can ask you to export or erase their data; Shopify&apos;s privacy webhooks carry that
+                out automatically.
+              </Text>
+              {data.servingHost ? (
+                <Link url={data.servingHost} target="_blank">
+                  Open your assistant
+                </Link>
+              ) : null}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Page>
+  );
+}

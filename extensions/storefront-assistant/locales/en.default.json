@@ -1,4 +1,6 @@
 {
   "launcher_label": "Ask us",
+  "launcher_aria_label": "Open the store assistant chat",
+  "launcher_title": "Chat with our assistant",
   "assistant_name": "Assistant"
 }

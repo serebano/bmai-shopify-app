@@ -1,4 +1,6 @@
 {
   "launcher_label": "お問い合わせ",
+  "launcher_aria_label": "ストアアシスタントのチャットを開く",
+  "launcher_title": "アシスタントとチャット",
   "assistant_name": "アシスタント"
 }

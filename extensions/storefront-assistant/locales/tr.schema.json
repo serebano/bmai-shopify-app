@@ -1,0 +1,9 @@
+{
+  "name": "Busymate AI asistanı",
+  "settings": {
+    "launcher_label": {
+      "label": "Sohbet düğmesi etiketi",
+      "info": "Sohbeti açan düğmenin metni. Her mağaza dilinde çevrilmiş varsayılan metni kullanmak için boş bırakın."
+    }
+  }
+}

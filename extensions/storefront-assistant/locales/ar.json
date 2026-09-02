@@ -1,4 +1,6 @@
 {
   "launcher_label": "اسألنا",
+  "launcher_aria_label": "فتح محادثة مساعد المتجر",
+  "launcher_title": "تحدث مع مساعدنا",
   "assistant_name": "المساعد"
 }

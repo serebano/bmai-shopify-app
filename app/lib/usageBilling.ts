@@ -1,153 +1,117 @@
 import prisma from "../db.server";
 import { adminForShop } from "../mcp/shopifyAdmin";
 import { callMcpTool } from "../bmai.server";
+import { PLANS, computeBillableUnits, planFor, type Plan } from "./plans";
+import { parseMeterCursor, serializeMeterCursor } from "./meterCursor";
+import { createAppEventsClient, usageIdempotencyKey } from "./appEvents";
+import { appGidFromEnv, fetchActiveSubscription } from "./partnerApi";
+
+export { PLANS, planFor };
+export type { Plan };
 
 /**
  * Two ledgers, never conflated:
- *   - Shopify Billing (merchant-facing usage charges, capped) — this file.
- *   - bmai usage_events (internal cost/margin truth) — read via MCP.
+ *   - Shopify App Pricing (merchant-facing: plan fee + metered overage) — this file.
+ *   - Busymate AI usage_events (internal cost/margin truth) — read via MCP.
  *
  * A "resolution" = a positive-outcome, non-double-billed conversation signal. We
- * read bmai tenant resolutions since `lastMeteredCursor`, map them → a Shopify
- * AppUsageRecord (clamped to the remaining cap headroom), and advance the cursor
- * idempotently. The cap is a ceiling on CHARGES, never on the assistant — the
- * widget is NEVER disabled (`widgetEnabled()` is unconditional).
+ * read the tenant's new resolutions since `cursor`, count them against the
+ * plan's INCLUDED allowance for the current billing cycle, and report only the
+ * billable overage — clamped to the plan's monthly cap — as ONE App Events
+ * billing event (`ai_resolution`, value = units). App Pricing has no usage-cap
+ * concept, so the cap is enforced here by not reporting beyond it. The cursor
+ * (+ cycle counter) advances idempotently only once the batch is accounted for.
+ *
+ * The cap is a ceiling on CHARGES, never on the assistant — the widget is NEVER
+ * disabled (`widgetEnabled()` is unconditional).
+ *
+ * TRIGGERS: `POST /api/billing/meter` (secret-gated, for a systemd timer — see
+ * app/routes/api.billing.meter.tsx) and opportunistically the Billing page load.
  */
-export interface Plan {
-  id: string;
-  name: string;
-  blurb: string;
-  cappedAmountCents: number;
-  perResolutionCents: number;
-}
-
-export const PLANS: Plan[] = [
-  { id: "starter", name: "Starter", blurb: "$0.50 per resolved conversation · $50/mo cap", cappedAmountCents: 5000, perResolutionCents: 50 },
-  { id: "growth", name: "Growth", blurb: "$0.40 per resolution · $250/mo cap", cappedAmountCents: 25000, perResolutionCents: 40 },
-  { id: "scale", name: "Scale", blurb: "$0.30 per resolution · $1,000/mo cap", cappedAmountCents: 100000, perResolutionCents: 30 },
-];
-
-export function planFor(planId: string | null | undefined): Plan {
-  return PLANS.find((p) => p.id === planId) ?? PLANS[0];
-}
-
-/**
- * The charge (cents) for a batch of resolutions, CLAMPED to the remaining cap
- * headroom. Pure + independently tested. `headroomCents <= 0` ⇒ 0 (cap reached, no
- * charge — the widget still runs).
- */
-export function computeUsageCharge(input: {
-  resolutions: number;
-  perResolutionCents: number;
-  headroomCents: number;
-}): number {
-  const gross = Math.max(0, Math.floor(input.resolutions)) * Math.max(0, input.perResolutionCents);
-  return Math.min(gross, Math.max(0, input.headroomCents));
-}
-
-/** The active usage line item + its cap headroom (all cents). */
-export interface UsageLine {
-  lineItemId: string;
-  cappedAmountCents: number;
-  balanceUsedCents: number;
-  currencyCode: string;
-}
-
 export interface MeterDeps {
-  /** Stored billing state for the shop (status drives whether we charge). */
+  /** Stored billing state for the shop (status + plan drive whether we report). */
   getBilling: (shop: string) => Promise<{ status: string; plan: string; lastMeteredCursor: string | null } | null>;
-  /** The bmai tenant id for the shop, or null (not provisioned). */
+  /** The Busymate AI tenant id for the shop, or null (not provisioned). */
   getTenantId: (shop: string) => Promise<string | null>;
-  /** Resolutions since the cursor (bmai MCP read — no backdoor). */
+  /** New resolutions since the cursor (Busymate AI MCP read — no backdoor), or null when unreadable. */
   readResolutions: (tenantId: string, cursor: string | null) => Promise<{ resolutions: number; cursor: string } | null>;
-  /** The live usage line item + cap headroom (Admin GraphQL), or null. */
-  readUsageLine: (shop: string) => Promise<UsageLine | null>;
-  /** Create the AppUsageRecord (Admin GraphQL Billing API). */
-  createUsageRecord: (input: {
-    shop: string;
-    lineItemId: string;
-    amountCents: number;
-    currencyCode: string;
-    description: string;
-  }) => Promise<{ ok: boolean; id?: string; error?: string }>;
-  /** Persist the advanced (idempotent) cursor. */
-  saveCursor: (shop: string, cursor: string) => Promise<void>;
+  /** The live billing cycle (Partner API) + the shop GID; null when there is no active cycle (trial / unreachable). */
+  readBillingCycle: (shop: string) => Promise<{ key: string; shopId: string } | null>;
+  /** Report billable units as an App Events billing event. */
+  reportUsage: (input: { shop: string; shopId: string; units: number; idempotencyKey: string }) => Promise<{ ok: boolean; error?: string }>;
+  /** Persist the advanced (idempotent) serialized cursor. */
+  saveCursor: (shop: string, raw: string) => Promise<void>;
 }
 
 export interface MeterOutcome {
+  /** New resolutions counted in this run. */
   metered: number;
-  chargedCents: number;
+  /** Billable units reported to Shopify in this run. */
+  reportedUnits: number;
   capped: boolean;
   cursor: string | null;
   error?: string;
 }
 
+const noop = (cursor: string | null, extra: Partial<MeterOutcome> = {}): MeterOutcome => ({
+  metered: 0,
+  reportedUnits: 0,
+  capped: false,
+  cursor,
+  ...extra,
+});
+
 /**
- * Meter one billing cycle for a shop. Idempotent on `lastMeteredCursor`. Charges
- * only an ACTIVE subscription; clamps to cap headroom; advances the cursor once the
- * resolutions are accounted for (charged OR capped) and holds it on a transient
- * charge failure so nothing is lost.
+ * Meter one batch for a shop. Idempotent on the stored cursor. Reports only for
+ * an ACTIVE paid plan; a Free plan / no subscription counts nothing to Shopify.
+ * Holds the cursor on any failure so no resolution is lost or double-billed.
  */
 export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps()): Promise<MeterOutcome> {
   const billing = await deps.getBilling(shop);
-  const cursor = billing?.lastMeteredCursor ?? null;
-  if (!billing || billing.status !== "active") {
-    return { metered: 0, chargedCents: 0, capped: false, cursor };
-  }
+  const state = parseMeterCursor(billing?.lastMeteredCursor);
+  if (!billing || billing.status !== "active") return noop(state.cursor);
   const tenantId = await deps.getTenantId(shop);
-  if (!tenantId) return { metered: 0, chargedCents: 0, capped: false, cursor };
+  if (!tenantId) return noop(state.cursor);
 
-  const usage = await deps.readResolutions(tenantId, cursor);
-  if (!usage) return { metered: 0, chargedCents: 0, capped: false, cursor };
+  const usage = await deps.readResolutions(tenantId, state.cursor);
+  if (!usage) return noop(state.cursor, { error: "resolutions unreadable" });
   const resolutions = Math.max(0, Math.floor(usage.resolutions ?? 0));
+  const plan = planFor(billing.plan);
+
   if (resolutions === 0) {
-    await deps.saveCursor(shop, usage.cursor);
-    return { metered: 0, chargedCents: 0, capped: false, cursor: usage.cursor };
+    await deps.saveCursor(shop, serializeMeterCursor({ ...state, cursor: usage.cursor }));
+    return noop(usage.cursor);
   }
 
-  const line = await deps.readUsageLine(shop);
-  if (!line) {
-    // No usage line item to charge against — hold the cursor and retry next cycle.
-    return { metered: resolutions, chargedCents: 0, capped: false, cursor, error: "no usage line item" };
+  // Free (no overage) — count for the merchant's dashboard, report nothing.
+  if (plan.overageCents === null) {
+    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions + resolutions }));
+    return { metered: resolutions, reportedUnits: 0, capped: false, cursor: usage.cursor };
   }
 
-  const perResolutionCents = planFor(billing.plan).perResolutionCents;
-  const headroomCents = line.cappedAmountCents - line.balanceUsedCents;
-  const amountCents = computeUsageCharge({ resolutions, perResolutionCents, headroomCents });
-
-  if (amountCents <= 0) {
-    // Cap reached: acknowledge the resolutions (advance cursor), charge nothing.
-    await deps.saveCursor(shop, usage.cursor);
-    return { metered: resolutions, chargedCents: 0, capped: true, cursor: usage.cursor };
+  const cycle = await deps.readBillingCycle(shop);
+  if (!cycle) {
+    // No active billing cycle (trial, or the Partner API could not be read):
+    // hold everything — never report blind, never lose the resolutions.
+    return { metered: resolutions, reportedUnits: 0, capped: false, cursor: state.cursor, error: "no active billing cycle — held" };
   }
+  const cycleResolutions = state.cycleKey === cycle.key ? state.cycleResolutions : 0;
+  const { units, capped } = computeBillableUnits({ plan, cycleResolutions, newResolutions: resolutions });
 
-  const rec = await deps.createUsageRecord({
-    shop,
-    lineItemId: line.lineItemId,
-    amountCents,
-    currencyCode: line.currencyCode,
-    description: `${resolutions} resolved conversation${resolutions === 1 ? "" : "s"} (Busymate AI)`,
-  });
-  if (!rec.ok) {
-    // Transient charge failure — hold the cursor so the resolutions aren't lost.
-    return { metered: resolutions, chargedCents: 0, capped: false, cursor, error: rec.error };
+  if (units > 0) {
+    const rec = await deps.reportUsage({ shop, shopId: cycle.shopId, units, idempotencyKey: usageIdempotencyKey(shop, usage.cursor) });
+    if (!rec.ok) {
+      // Transient failure — hold the cursor so the batch is retried, not lost.
+      return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error: rec.error };
+    }
   }
-  await deps.saveCursor(shop, usage.cursor);
-  return {
-    metered: resolutions,
-    chargedCents: amountCents,
-    capped: amountCents < resolutions * perResolutionCents,
-    cursor: usage.cursor,
-  };
+  await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + resolutions }));
+  return { metered: resolutions, reportedUnits: units, capped, cursor: usage.cursor };
 }
 
-/** The USD-decimal string an AppUsageRecord `price.amount` expects. */
-function centsToAmount(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
-/** Live production deps: Prisma + the shop Admin client + bmai MCP. */
+/** Live production deps: Prisma + Busymate AI MCP + Partner API + App Events. */
 export function liveMeterDeps(): MeterDeps {
+  const events = createAppEventsClient();
   return {
     getBilling: async (shop) => {
       const b = await prisma.billingState.findUnique({ where: { shop } });
@@ -157,93 +121,30 @@ export function liveMeterDeps(): MeterDeps {
       const t = await prisma.shopTenant.findUnique({ where: { shop }, select: { bmaiTenantId: true } });
       return t?.bmaiTenantId ?? null;
     },
-    readResolutions: async (tenantId, cursor) => {
-      const r = await callMcpTool<{ resolutions: number; cursor: string }>("get_tenant_usage", {
-        tenant_id: tenantId,
-        since_cursor: cursor,
-        metric: "resolution",
-      });
-      return r.ok && r.data ? { resolutions: r.data.resolutions ?? 0, cursor: r.data.cursor } : null;
+    readResolutions: async (tenantId, _cursor) => {
+      // Resolution counts are a Busymate AI MCP read (never a backdoor). The
+      // partner rollup tool takes tenant_id; a cursor/metric-aware arm is a
+      // platform follow-up — until it lands, a missing count reads as null (held).
+      const r = await callMcpTool<{ resolutions?: number; cursor?: string }>("get_tenant_usage", { tenant_id: tenantId });
+      if (!r.ok || !r.data || typeof r.data.resolutions !== "number" || !r.data.cursor) return null;
+      return { resolutions: r.data.resolutions, cursor: String(r.data.cursor) };
     },
-    readUsageLine: async (shop) => {
+    readBillingCycle: async (shop) => {
+      const appGid = appGidFromEnv();
+      if (!appGid) return null;
       const admin = await adminForShop(shop);
-      const data = (await admin.graphql(
-        `#graphql
-        query UsageLine {
-          currentAppInstallation {
-            activeSubscriptions {
-              id status
-              lineItems {
-                id
-                plan {
-                  pricingDetails {
-                    __typename
-                    ... on AppUsagePricing {
-                      cappedAmount { amount currencyCode }
-                      balanceUsed { amount currencyCode }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }`,
-      )) as {
-        currentAppInstallation?: {
-          activeSubscriptions?: Array<{
-            status: string;
-            lineItems?: Array<{
-              id: string;
-              plan?: {
-                pricingDetails?: {
-                  __typename?: string;
-                  cappedAmount?: { amount: string; currencyCode: string };
-                  balanceUsed?: { amount: string; currencyCode: string };
-                };
-              };
-            }>;
-          }>;
-        };
-      };
-      const sub = (data.currentAppInstallation?.activeSubscriptions ?? []).find((s) => s.status === "ACTIVE");
-      const li = sub?.lineItems?.find((l) => l.plan?.pricingDetails?.__typename === "AppUsagePricing");
-      const pd = li?.plan?.pricingDetails;
-      if (!li || !pd?.cappedAmount) return null;
-      return {
-        lineItemId: li.id,
-        cappedAmountCents: Math.round(Number(pd.cappedAmount.amount) * 100),
-        balanceUsedCents: Math.round(Number(pd.balanceUsed?.amount ?? "0") * 100),
-        currencyCode: pd.cappedAmount.currencyCode,
-      };
+      const data = (await admin.graphql(`#graphql
+        query ShopId { shop { id } }`)) as { shop?: { id?: string } };
+      const shopId = data.shop?.id;
+      if (!shopId) return null;
+      const sub = await fetchActiveSubscription({ appGid, shopGid: shopId });
+      if (!sub.ok || !sub.subscription?.currentBillingCycle) return null;
+      return { key: sub.subscription.currentBillingCycle.startTime, shopId };
     },
-    createUsageRecord: async ({ shop, lineItemId, amountCents, currencyCode, description }) => {
-      const admin = await adminForShop(shop);
-      const data = (await admin.graphql(
-        `#graphql
-        mutation CreateUsageRecord($subscriptionLineItemId: ID!, $description: String!, $price: MoneyInput!) {
-          appUsageRecordCreate(subscriptionLineItemId: $subscriptionLineItemId, description: $description, price: $price) {
-            appUsageRecord { id }
-            userErrors { field message }
-          }
-        }`,
-        {
-          subscriptionLineItemId: lineItemId,
-          description,
-          price: { amount: centsToAmount(amountCents), currencyCode },
-        },
-      )) as {
-        appUsageRecordCreate?: {
-          appUsageRecord?: { id: string } | null;
-          userErrors?: Array<{ message?: string }>;
-        };
-      };
-      const err = data.appUsageRecordCreate?.userErrors?.find((e) => e.message)?.message;
-      const id = data.appUsageRecordCreate?.appUsageRecord?.id;
-      if (err || !id) return { ok: false, error: err ?? "usage record not created" };
-      return { ok: true, id };
-    },
-    saveCursor: async (shop, cursor) => {
-      await prisma.billingState.update({ where: { shop }, data: { lastMeteredCursor: cursor } });
+    reportUsage: async ({ shopId, units, idempotencyKey }) =>
+      events.reportUsage({ shopId, units, idempotencyKey, timestamp: new Date().toISOString() }),
+    saveCursor: async (shop, raw) => {
+      await prisma.billingState.update({ where: { shop }, data: { lastMeteredCursor: raw } });
     },
   };
 }
@@ -255,5 +156,3 @@ export function liveMeterDeps(): MeterDeps {
 export function widgetEnabled(): true {
   return true;
 }
-
-export { centsToAmount };
