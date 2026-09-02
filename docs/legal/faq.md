@@ -1,6 +1,6 @@
 <!--
-  DRAFT merchant/shopper FAQ for "Busymate AI for Shopify". Publish at
-  https://busymate.ai/shopify/faq (the faq_url in listing/*.json) before submission.
+  Merchant/shopper FAQ for "Busymate AI for Shopify". Published at
+  https://store.busymate.ai/legal/faq (the faq_url in listing/*.json).
   Last drafted: 2026-08.
 -->
 
@@ -10,8 +10,8 @@
 It adds **bro**, an AI support assistant, to your storefront. bro answers only from
 your own products and policies — grounded and source-cited, and it says so when it
 isn't sure — handles order-status questions, and can process returns, refunds and
-cancellations with your confirmation and a spend cap. It speaks 14 languages and hands
-off to your team when confidence is low.
+cancellations with your confirmation and a spend cap. It replies in your shoppers'
+languages and hands off to your team when confidence is low.
 
 ## How does it install?
 One click from the Shopify App Store. On install we provision your store's assistant,

@@ -61,6 +61,6 @@ on failure so Shopify retries — they never silently 200.
 ## Where the customer-facing policy is published
 
 The public privacy policy + FAQ (drafts in [`legal/privacy.md`](./legal/privacy.md)
-and [`legal/faq.md`](./legal/faq.md)) must be published at
-`https://busymate.ai/legal/privacy` and `https://busymate.ai/shopify/faq`
-(the URLs referenced in `listing/en.json`) before App Store submission.
+and [`legal/faq.md`](./legal/faq.md)) are published at
+`https://store.busymate.ai/legal/privacy` and `https://store.busymate.ai/legal/faq`
+(the URLs referenced in `listing/en.json` and on the canonical store record).

@@ -29,6 +29,7 @@ export function normalizeRecord(body) {
     name: app.name,
     tagline: app.tagline ?? null,
     descriptionMd: app.descriptionMd ?? app.description_md ?? null,
+    privacyUrl: app.privacyUrl ?? app.privacy_url ?? null,
     pricingModel: app.pricingModel ?? app.pricing_model ?? null,
     pricingPlans: body?.plans ?? app.pricingPlans ?? app.plans ?? [],
   };

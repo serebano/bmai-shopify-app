@@ -2,18 +2,16 @@
   "_locale": "fr",
   "app_name": "Busymate AI",
   "tagline": "Assistance IA pour votre boutique, au fait des commandes",
-  "intro": "Une assistance fondée et sourcée qui effectue de vraies actions sur les commandes — en 14 langues.",
-  "details": "Busymate AI ajoute un agent d'assistance IA à votre boutique. Il répond uniquement à partir de vos propres produits et politiques — fondé, avec sources citées, et il reconnaît quand il n'est pas sûr — et gère le suivi des commandes ainsi que les retours, remboursements et annulations avec votre confirmation et un plafond de dépenses. Il parle 14 langues avec détection automatique et prise en charge RTL, et transmet à votre équipe lorsque la confiance est faible. Vous ne payez que pour les conversations qu'il résout — plafonné, et l'assistant continue de fonctionner au-delà du plafond.",
+  "intro": "Une assistance IA qui répond uniquement à partir du contenu de votre boutique. Elle traite les demandes de commande et réduit les tickets.",
+  "details": "Busymate AI ajoute un assistant de support IA à votre boutique en ligne. Il répond aux acheteurs uniquement à partir de vos propres produits, politiques et contenus, affiche ses sources et indique quand il n'est pas sûr plutôt que de deviner. Les acheteurs connectés peuvent consulter le statut et le suivi de leur commande et demander à modifier, annuler, retourner ou rembourser une commande ; chaque action est d'abord confirmée, et les remboursements importants ou les conversations à faible confiance sont transmis à votre équipe. Il répond dans la langue de l'acheteur, y compris les écritures de droite à gauche.",
   "feature_bullets": [
-    "Installation en 1 clic + apprentissage automatique sur votre catalogue et vos politiques",
-    "Au fait des commandes : suit, modifie, annule, rembourse — avec confirmation",
-    "Répond uniquement à partir de votre boutique, avec sources : fondé, cité et reconnaît quand il n'est pas sûr",
-    "Transfert à un humain selon le niveau de confiance, avec reprise propre",
-    "Simulation avant lancement sur vos conversations passées",
-    "Tarification transparente à la résolution",
-    "14 langues, détectées automatiquement, compatibles RTL"
+    "Répond uniquement à partir de vos propres produits, politiques et contenus, avec ses sources",
+    "Indique quand il n'est pas sûr et propose un humain plutôt que de deviner",
+    "Les acheteurs connectés obtiennent le statut, le suivi et des actions confirmées sur leurs commandes",
+    "Annulations, retours et remboursements sont d'abord confirmés ; les remboursements importants vous reviennent",
+    "Répond dans la langue de l'acheteur, y compris les écritures de droite à gauche"
   ],
-  "pricing_summary": "Payez par conversation résolue. Fixez un plafond de dépenses mensuel ; l'assistant continue de fonctionner au-delà du plafond.",
-  "privacy_url": "https://busymate.ai/legal/privacy",
-  "faq_url": "https://busymate.ai/shopify/faq"
+  "pricing_summary": "Des forfaits mensuels avec des résolutions IA incluses, puis une facturation par résolution jusqu'à votre plafond de dépenses mensuel. Forfait gratuit disponible ; les forfaits payants commencent par un essai gratuit de 14 jours.",
+  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "faq_url": "https://store.busymate.ai/legal/faq"
 }

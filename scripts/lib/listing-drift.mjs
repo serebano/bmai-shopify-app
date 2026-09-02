@@ -28,6 +28,7 @@
  * @property {string} name
  * @property {string|null} tagline
  * @property {string|null} descriptionMd
+ * @property {string|null} [privacyUrl]
  * @property {PricingPlan[]} pricingPlans
  *
  * @typedef {Object} RepoArtifacts
@@ -76,6 +77,17 @@ export function canonicalIntro(descriptionMd) {
 }
 
 /**
+ * The listing DETAILS ("App details" in the Partner form) must equal the SECOND
+ * paragraph of the canonical description — the same 1:1 mapping as the intro.
+ * Asserted since busymate-devtools#2110: the details paragraph had drifted (it
+ * carried pricing words + a language count the App Store rules forbid) while only
+ * paragraph 1 was checked.
+ */
+export function canonicalDetails(descriptionMd) {
+  return String(descriptionMd ?? "").split(/\n\n+/)[1]?.trim() ?? "";
+}
+
+/**
  * Compare the canonical record against the repo's derived artifacts.
  * @param {CanonicalRecord} record
  * @param {RepoArtifacts} artifacts
@@ -102,6 +114,19 @@ export function computeListingDrift(record, artifacts) {
     (artifacts.listingEn?.intro ?? "").trim(),
     "the lead paragraph of the canonical description",
   );
+  eq(
+    "listing/en.json:details",
+    canonicalDetails(record.descriptionMd),
+    (artifacts.listingEn?.details ?? "").trim(),
+    "the second paragraph of the canonical description",
+  );
+
+  // Support URL — the record's privacy link is what every surface (busymate.ai
+  // store page, the app landing, the Shopify listing) must point at. Compared
+  // only when the record carries one (a saved --record file may omit it).
+  if (record.privacyUrl) {
+    eq("listing/en.json:privacy_url", record.privacyUrl, artifacts.listingEn?.privacy_url ?? "", "the record's privacy link");
+  }
 
   // Managed Pricing — Partner-Dashboard-ONLY. listing/pricing.json is the
   // human's source-of-record for the Dashboard entry; it must equal the DB.

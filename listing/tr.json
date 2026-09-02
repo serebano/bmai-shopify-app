@@ -2,18 +2,16 @@
   "_locale": "tr",
   "app_name": "Busymate AI",
   "tagline": "Mağazan için sipariş farkında yapay zekâ desteği",
-  "intro": "Kaynak gösteren, temellendirilmiş ve siparişlerde gerçek işlemler yapan destek — 14 dilde.",
-  "details": "Busymate AI, mağazana bir yapay zekâ destek temsilcisi ekler. Yalnızca kendi ürünlerine ve politikalarına dayanarak yanıt verir — temellendirilmiş, kaynak göstererek ve emin olmadığında bunu belirterek — ve sipariş durumunun yanı sıra iadeleri, geri ödemeleri ve iptalleri senin onayınla ve bir harcama limitiyle yönetir. Otomatik algılama ve RTL desteğiyle 14 dil konuşur ve güven düşük olduğunda ekibine devreder. Yalnızca çözdüğü görüşmeler için ödeme yaparsın — üst sınırlı, ve asistan limit aşılsa bile çalışmaya devam eder.",
+  "intro": "Yalnızca mağazanın içeriğinden yanıt veren yapay zekâ desteği. Sipariş taleplerini halleder ve destek taleplerini azaltır.",
+  "details": "Busymate AI, online mağazana bir yapay zekâ destek asistanı ekler. Alışveriş yapanlara yalnızca kendi ürünlerin, politikaların ve mağaza içeriğinle yanıt verir, kaynaklarını gösterir ve tahmin etmek yerine emin olmadığında bunu söyler. Oturum açmış müşteriler sipariş durumunu ve kargo takibini görebilir; bir siparişi güncelleme, iptal etme, iade etme veya geri ödeme talep edebilir. Her işlem önce onaylanır; daha büyük geri ödemeler veya düşük güvenli görüşmeler ekibine aktarılır. Müşterinin dilinde yanıt verir; sağdan sola yazılan diller dahil.",
   "feature_bullets": [
-    "Tek tıkla kurulum + kataloğun ve politikaların üzerinde otomatik eğitim",
-    "Sipariş farkında: takip eder, düzenler, iptal eder, iade eder — onayla",
-    "Yalnızca mağazandan yanıt verir, kaynaklarla: temellendirilmiş, kaynaklı ve emin olmadığında belirtir",
-    "Güven düzeyine göre bir insana devir, temiz geri teslimle",
-    "Geçmiş görüşmelerin üzerinde lansman öncesi simülasyon",
-    "Çözüm başına şeffaf fiyatlandırma",
-    "14 dil, otomatik algılanır, RTL'ye hazır"
+    "Yalnızca kendi ürünlerin, politikaların ve mağaza içeriğinden, kaynaklarıyla yanıt verir",
+    "Emin olmadığında bunu söyler ve tahmin etmek yerine bir insan önerir",
+    "Oturum açmış müşteriler sipariş durumu, kargo takibi ve onaylı sipariş işlemleri alır",
+    "İptaller, iadeler ve geri ödemeler önce onaylanır; daha büyük geri ödemeler sana gider",
+    "Müşterinin dilinde yanıt verir; sağdan sola yazılan diller dahil"
   ],
-  "pricing_summary": "Çözülen görüşme başına ödersin. Aylık bir harcama limiti belirle; asistan limit aşılsa bile çalışmaya devam eder.",
-  "privacy_url": "https://busymate.ai/legal/privacy",
-  "faq_url": "https://busymate.ai/shopify/faq"
+  "pricing_summary": "Dahil yapay zekâ çözümleri olan aylık planlar, ardından aylık harcama limitine kadar çözüm başına ücret. Ücretsiz plan mevcut; ücretli planlar 14 günlük ücretsiz deneme ile başlar.",
+  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "faq_url": "https://store.busymate.ai/legal/faq"
 }

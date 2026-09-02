@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetStoreListingCache,
@@ -14,7 +15,7 @@ const ROW = {
   slug: STORE_APP_SLUG,
   name: "Busymate AI",
   tagline: "Grounded, order-aware AI support for your store",
-  privacy_url: "https://busymate.ai/legal/privacy",
+  privacy_url: "https://store.busymate.ai/legal/privacy",
 };
 
 function fetchOk(row: unknown) {
@@ -56,6 +57,17 @@ describe("getStoreListing", () => {
     expect(listing.name).toBe("Busymate AI");
     expect(listing.tagline).toBeTruthy(); // never a blank page
     expect(listing.slug).toBe(STORE_APP_SLUG);
+  });
+
+  it("the committed snapshot matches the listing copy (same tagline + privacy URL as listing/en.json)", async () => {
+    // The snapshot is a copy of the canonical record; listing/en.json is drift-checked
+    // against that record — so the two must agree or the fallback landing would show
+    // a different privacy link than the App Store listing (busymate-devtools#2110).
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    const listing = await getStoreListing();
+    const en = JSON.parse(readFileSync("listing/en.json", "utf8"));
+    expect(listing.tagline).toBe(en.tagline);
+    expect(listing.privacy_url).toBe(en.privacy_url);
   });
 
   it("falls back to the snapshot on a non-ok response and on an empty row set", async () => {
