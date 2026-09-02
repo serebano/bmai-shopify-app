@@ -4,6 +4,33 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-02 — fix(#2132 C+D): branding save re-publishes the runtime; honest "No plan selected" billing state · `dc2e004` (PR #9) · host `store.busymate.ai` build 18:38Z
+
+Found by the busymate-devtools#2110 reviewer simulation on the fresh dev store
+`busymate-ai-review-test-5` (busymate-devtools#2132).
+
+- **FAIL C — assistant rename not reflected in the widget.** Root cause: the settings save
+  called only `set_tenant_branding` (the tenant ROW), but the storefront widget renders the
+  PUBLISHED runtime revision, whose `brand` the platform synthesizes from that row at
+  `publish_tenant_runtime` time — the save never re-published. Fix: `app/lib/brandingSave.ts`
+  (set branding → the training re-publish, fail-closed: a failed publish is reported as
+  "saved, but not live"); `app/lib/provision.ts` seeds the default names ONLY for a new tenant,
+  so a reinstall no longer wipes the merchant's saved names. Live proof on review-test-5 after the
+  host deploy: Assistant settings → "Riley Helper" → Save (POST 1.9 s) → tenant row updated
+  18:39:48Z → served runtime `assistantName: "Riley Helper"` → a fresh storefront chat greets
+  "Hi, I'm Riley Helper" (composer "Message Riley Helper").
+- **Review risk D — Shopify "Manage apps → Billing: No plan selected" while the app said
+  "Free plan".** Partner API evidence (Active Subscription API, value-blind probe on the host):
+  review-test-5 has only `RELATIONSHIP_INSTALLED/UNINSTALLED` events and `activeSubscription = null`
+  (no plan was ever selected there); review-test-4, where the Free plan WAS selected, has a real
+  contract (`SUBSCRIPTION_CREATED` → item handle `free`, `FlatRatePrice 0.0`, a
+  `legacySubscriptionId`). So under Shopify App Pricing the $0 Free plan IS a subscription once
+  selected (and then shows under Manage apps); "no contract" must read "No plan selected".
+  `billingGate.planSelected` + the Billing page / Home / checklist copy now say exactly that,
+  with the Choose-a-plan CTA.
+- Tests (RED→GREEN, run): `test/brandingSave.test.ts`, `test/provision.test.ts`,
+  `test/billingGate.test.ts` — 461 passing on the host build.
+
 ## 2026-09-02 — fix: embedded actions fail closed on the client (the REAL Re-train 500) · host `store.busymate.ai`
 
 Follow-up to the hydration fix below (busymate-devtools#2110). Traced live in the admin iframe
