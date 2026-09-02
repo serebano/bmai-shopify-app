@@ -41,6 +41,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     tenantId: tenant?.bmaiTenantId ?? null,
     provisionState: tenant?.provisionState ?? "pending",
     provisionError: tenant?.provisionError ?? null,
+    provisionWarning: tenant?.provisionWarning ?? null,
     provisionedAt: tenant?.publishedAt ? new Date(tenant.publishedAt).toISOString() : null,
     training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
   };
@@ -102,7 +103,7 @@ export default function ConnectorPage() {
     }
   }, [fetcher.state, fetcher.data, shopify, revalidate]);
 
-  const connected = Boolean(data.connectorId) && data.provisionState === "published";
+  const connected = Boolean(data.connectorId) && data.provisionState === "published" && !data.provisionWarning;
   return (
     <Page>
       <TitleBar title="Store connection" />
@@ -134,6 +135,11 @@ export default function ConnectorPage() {
                 {data.provisionError ? (
                   <Text as="p" tone="critical">
                     {data.provisionError}
+                  </Text>
+                ) : null}
+                {data.provisionWarning ? (
+                  <Text as="p" tone="caution">
+                    {data.provisionWarning}
                   </Text>
                 ) : null}
                 <InlineStack gap="300">

@@ -72,6 +72,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     servingHost: `${slug}.busymate.ai`,
     provisionState,
     provisionError: tenant?.provisionError ?? null,
+    provisionWarning: tenant?.provisionWarning ?? null,
     connectorReady: Boolean(tenant?.connectorId),
     training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
     embed,
@@ -129,6 +130,11 @@ export default function Index() {
                     </Text>
                   ) : null}
                 </BlockStack>
+              </Banner>
+            ) : null}
+            {!data.provisionError && data.provisionWarning ? (
+              <Banner tone="warning" title="Order tools are not live yet">
+                <Text as="p">{data.provisionWarning}</Text>
               </Banner>
             ) : null}
 

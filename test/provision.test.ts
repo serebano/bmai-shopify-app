@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runProvisionLifecycle,
   provisionOnInstall,
+  publishedRuntimeGaps,
   CONNECTOR_POLICIES,
   servingHost,
   type ProvisionDeps,
   type TenantPatch,
 } from "../app/lib/provision";
+import type { IdentityProviderRegistration } from "../app/lib/mgmtArgs";
 import type { PartnerProof } from "../app/lib/partnerProof";
 
 // The tenant-provisioning SEAM — exercised with the Shopify session + bmai MCP
@@ -16,14 +18,27 @@ import type { PartnerProof } from "../app/lib/partnerProof";
 
 const STUB_PROOF: PartnerProof = { partner: "shopify", shop: "acme.myshopify.com", proof: "deadbeef", ts: 1787900000000 };
 
+/** The launch-JWT provider this host publishes (app/lib/identity.ts launchIdentityRegistration). */
+const LAUNCH: IdentityProviderRegistration = {
+  issuer: "https://store.busymate.ai",
+  jwksUri: "https://store.busymate.ai/.well-known/jwks.json",
+  identityEndpointUrl: "https://store.busymate.ai/identity",
+  audience: "bmai-support-launch",
+  tenantClaim: "shop",
+  maxTokenAgeSeconds: 120,
+};
+
 function makeDeps(
   call: ProvisionDeps["call"],
-  opts: { proof?: PartnerProof | null; delegationReady?: boolean } = {},
+  opts: { proof?: PartnerProof | null; delegationReady?: boolean; launchIdentity?: IdentityProviderRegistration | null } = {},
 ): { deps: ProvisionDeps; states: TenantPatch[] } {
   const states: TenantPatch[] = [];
   const deps: ProvisionDeps = {
     call,
     getTenant: async () => ({ bmaiTenantId: null, customDomain: null }),
+    // Omitted ⇒ the launch signing key is NOT configured ⇒ no provider step; the
+    // #2132 identity-provider cases opt in explicitly with `launchIdentity: LAUNCH`.
+    launchIdentity: opts.launchIdentity ?? null,
     saveTenant: async (_shop, patch) => {
       states.push(patch);
     },
@@ -42,30 +57,39 @@ describe("tenant provisioning lifecycle (seam)", () => {
     const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
       if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_123" } };
       if (name === "upsert_tenant_support_connector") return { ok: true, data: { id: "c_9" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: true, data: { provider: { id: "p_7" } } };
+      // The platform echoes what the published revision ASSIGNED (#2132).
+      if (name === "publish_tenant_runtime") return { ok: true, data: { revision: 1, connector_ids: ["c_9"], identity_provider_ids: ["p_7"] } };
       return { ok: true };
     });
-    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
 
     const out = await runProvisionLifecycle(session, deps);
 
     expect(out.ok).toBe(true);
     expect(out.tenantId).toBe("t_123");
     expect(out.connectorId).toBe("c_9");
+    expect(out.identityProviderId).toBe("p_7");
     // Exact ordered contract with the bmai MCP tenant tools (NO operator-only
     // set_tenant_domain — the tenant serves at the derived <slug>.busymate.ai lane).
+    // The identity provider (#2132 FAIL A) registers right after the connector, so
+    // ONE publish can assign both.
     expect(out.calls).toEqual([
       "provision_partner_tenant",
       "set_tenant_branding",
       "add_tenant_embed_origin",
       "upsert_tenant_support_connector",
+      "upsert_tenant_identity_provider",
       "publish_tenant_runtime",
     ]);
     // add_tenant_admin is NOT called (needs a bmai user_id a Shopify install lacks).
     expect(out.calls).not.toContain("add_tenant_admin");
     expect(out.warnings).toEqual([]);
-    // Final persisted state is "published".
+    // Final persisted state is "published", with both registrations live (no warning).
     expect(states.at(-1)?.provisionState).toBe("published");
     expect(states.at(-1)?.bmaiTenantId).toBe("t_123");
+    expect(states.at(-1)?.identityProviderId).toBe("p_7");
+    expect(states.at(-1)?.provisionWarning).toBeNull();
   });
 
   it("threads the proof-of-shop into provision + embed-origin, and never sends set_tenant_domain", async () => {
@@ -146,6 +170,20 @@ describe("tenant provisioning lifecycle (seam)", () => {
     for (const t of CONNECTOR_POLICIES.delegated_tools) {
       expect(args.tool_access[t]).toBe("delegated");
     }
+    // …each confirm-gated on the platform (#2132: the "cancel my order" confirmation
+    // park). Registered in lockstep with the delegated tier.
+    expect((args as { confirm_tools?: string[] }).confirm_tools).toEqual([...CONNECTOR_POLICIES.confirm_tools]);
+  });
+
+  it("read-only mode registers NO confirm_tools (nothing delegated to gate)", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"], { delegationReady: false });
+    await runProvisionLifecycle(session, deps);
+    const args = call.mock.calls.find((c) => c[0] === "upsert_tenant_support_connector")![1] as Record<string, unknown>;
+    expect(args).not.toHaveProperty("confirm_tools");
   });
 
   it("never calls add_tenant_admin (a Shopify install has no bmai user_id)", async () => {
@@ -520,5 +558,141 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect(seen["publish_tenant_runtime"]).not.toHaveProperty("knowledge_sources");
     expect(states.at(-1)).not.toHaveProperty("kbTrainedAt");
     expect(out.training).toBeNull();
+  });
+});
+
+
+// --- Visitor identity provider + assignment proof (#2132 FAIL A) ---------------
+// support-launch trusts a launch JWT ONLY for a provider registered under the
+// token's issuer AND assigned to the published revision. The lifecycle registers
+// this host's issuer (idempotently) and proves the publish assigned it — a
+// registered-but-unassigned connector/provider is surfaced, never "Connected".
+
+describe("lifecycle — visitor identity provider (#2132)", () => {
+  it("registers the launch-JWT issuer after the connector, threads proof + delegated_access, and binds it to the shop", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1", created: true } };
+      if (name === "upsert_tenant_support_connector") return { ok: true, data: { id: "c_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: true, data: { provider: { id: "p_1" } } };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { revision: 2, connector_ids: ["c_1"], identity_provider_ids: ["p_1"] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH, delegationReady: true });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    const idx = (n: string) => out.calls.indexOf(n);
+    expect(idx("upsert_tenant_identity_provider")).toBeGreaterThan(idx("upsert_tenant_support_connector"));
+    expect(idx("upsert_tenant_identity_provider")).toBeLessThan(idx("publish_tenant_runtime"));
+    expect(seen["upsert_tenant_identity_provider"]).toMatchObject({
+      partner: "shopify",
+      shop: "acme.myshopify.com",
+      proof: "deadbeef",
+      tenant_id: "t_1",
+      label: "Shopify customer accounts",
+      issuer: LAUNCH.issuer,
+      jwks_uri: LAUNCH.jwksUri,
+      audiences: ["bmai-support-launch"],
+      tenant_claim: "shop",
+      tenant_claim_value: "acme.myshopify.com",
+      subject_claim: "sub",
+      allowed_algs: ["ES256"],
+      max_token_age_seconds: 120,
+      identity_endpoint_url: LAUNCH.identityEndpointUrl,
+      login_url: "https://acme.myshopify.com/account/login",
+      account_url: "https://acme.myshopify.com/account",
+      delegated_access: true,
+      enabled: true,
+      confirm: true,
+    });
+    // First run: no persisted provider → no provider_id (create).
+    expect(seen["upsert_tenant_identity_provider"]).not.toHaveProperty("provider_id");
+    expect(states.at(-1)?.identityProviderId).toBe("p_1");
+    expect(states.at(-1)?.provisionWarning).toBeNull();
+  });
+
+  it("delegated_access mirrors the verifier readiness (read-only host → false)", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH, delegationReady: false });
+    await runProvisionLifecycle(session, deps);
+    expect(seen["upsert_tenant_identity_provider"].delegated_access).toBe(false);
+  });
+
+  it("re-targets the PERSISTED provider id on a re-run (idempotent — never a second provider for one issuer)", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: true, data: { provider: { id: "p_existing" } } };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { connector_ids: ["c_old"], identity_provider_ids: ["p_existing"] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    deps.getTenant = async () => ({ bmaiTenantId: "t_1", customDomain: null, connectorId: "c_old", identityProviderId: "p_existing" });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(seen["upsert_tenant_identity_provider"].provider_id).toBe("p_existing");
+    expect(out.identityProviderId).toBe("p_existing");
+    expect(states.at(-1)?.identityProviderId).toBe("p_existing");
+  });
+
+  it("no launch signing key (launchIdentity null) → NO provider step; shoppers stay anonymous honestly", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { connector_ids: [] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: null });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.calls).not.toContain("upsert_tenant_identity_provider");
+    expect(out.identityProviderId).toBeNull();
+    expect(states.at(-1)?.identityProviderId).toBeNull();
+  });
+
+  it("a provider denial is a SOFT failure — warned, tenant still published, no id persisted", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: false, error: "tenant integration administration denied" };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { connector_ids: [] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.warnings.some((w) => /upsert_tenant_identity_provider: .*denied/.test(w))).toBe(true);
+    expect(states.at(-1)?.provisionState).toBe("published");
+    expect(states.at(-1)?.identityProviderId).toBeNull();
+  });
+
+  it("FAIL-CLOSED assignment proof: a publish that does not echo the connector/provider as assigned persists provisionWarning (never silent Connected)", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_support_connector") return { ok: true, data: { id: "c_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: true, data: { provider: { id: "p_1" } } };
+      // The pre-fix platform: registered rows never assigned (connector_ids: []) —
+      // exactly the #2132 FAIL A state (assigned_to_published_revision:false).
+      if (name === "publish_tenant_runtime") return { ok: true, data: { revision: 5, connector_ids: [], identity_provider_ids: [] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH, delegationReady: true });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true); // the tenant IS live (product/policy answers)…
+    const last = states.at(-1)!;
+    expect(last.provisionState).toBe("published");
+    // …but the merchant sees exactly what is not live.
+    expect(last.provisionWarning).toMatch(/Not live yet: order tools .*; customer sign-in/);
+    expect(out.warnings).toContain(last.provisionWarning);
+  });
+
+  it("publishedRuntimeGaps: absent echo counts as NOT live (couldn't check ≠ green); nothing registered → no gap", () => {
+    expect(publishedRuntimeGaps({ revision: 3 }, { connectorId: "c_1", identityProviderId: null })).toMatch(/order tools/);
+    expect(publishedRuntimeGaps(undefined, { connectorId: null, identityProviderId: "p_1" })).toMatch(/customer sign-in/);
+    expect(publishedRuntimeGaps({ connector_ids: ["c_1"], identity_provider_ids: ["p_1"] }, { connectorId: "c_1", identityProviderId: "p_1" })).toBeNull();
+    expect(publishedRuntimeGaps({}, { connectorId: null, identityProviderId: null })).toBeNull();
   });
 });
