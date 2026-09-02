@@ -49,7 +49,7 @@ describe("trainTenant", () => {
     expect(publishes[0].launchOrigins).toEqual(INPUT.launchOrigins);
     expect(publishes[0].embedOrigins).toEqual(INPUT.embedOrigins);
     const ks = publishes[0].knowledgeSources as { key: string }[];
-    expect(ks.map((k) => k.key)).toEqual(["shopify:policies", "shopify:products"]);
+    expect(ks.map((k) => k.key)).toEqual(["shopify:order-help", "shopify:policies", "shopify:products"]);
     expect(saved.at(-1)).toMatchObject({
       kbTrainedAt: new Date("2026-09-02T12:00:00.000Z"),
       kbError: null,
@@ -84,11 +84,12 @@ describe("trainTenant", () => {
     expect(saved.at(-1)).toMatchObject({ kbError: expect.stringMatching(/exceeds 40,000/) });
   });
 
-  it("an empty store publishes WITHOUT knowledge_sources and records zero counts", async () => {
+  it("an empty store publishes ONLY the order-help how-to (#2132) and records zero counts", async () => {
     const { d, saved, publishes } = deps({ fetchSnapshot: async () => ({ ...SNAPSHOT, products: [], policies: [], pages: [] }) });
     const out = await trainTenant(INPUT, d);
     expect(out.ok).toBe(true);
-    expect(publishes[0]).not.toHaveProperty("knowledgeSources");
+    const ks = publishes[0].knowledgeSources as { key: string }[];
+    expect(ks.map((k) => k.key)).toEqual(["shopify:order-help"]);
     expect(saved.at(-1)).toMatchObject({ kbProducts: 0, kbPolicies: 0, kbPages: 0, kbError: null });
   });
 

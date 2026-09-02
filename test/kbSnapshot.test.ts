@@ -92,18 +92,19 @@ describe("buildKnowledgeSources — shape", () => {
 
   it("every key matches the platform regex, kinds are valid, and an empty store yields no sources", () => {
     const out = buildKnowledgeSources(snapshot({ products: [product(1)], policies: [{ title: "P", body: "x" }], pages: [{ title: "Q", body: "y" }] }));
-    expect(out.sources.length).toBe(3);
+    expect(out.sources.length).toBe(4);
     for (const s of out.sources) {
       expect(s.key).toMatch(KEY_RE);
       expect(["fact", "howto", "reference", "glossary"]).toContain(s.kind);
       expect(s.content.length).toBeGreaterThan(0);
     }
     // Policies come FIRST (most important), then products, then pages.
-    expect(out.sources.map((s) => s.key)).toEqual([KNOWLEDGE_KEYS.policies, KNOWLEDGE_KEYS.products, KNOWLEDGE_KEYS.pages]);
+    expect(out.sources.map((s) => s.key)).toEqual([KNOWLEDGE_KEYS.orderHelp, KNOWLEDGE_KEYS.policies, KNOWLEDGE_KEYS.products, KNOWLEDGE_KEYS.pages]);
+    // An empty store still publishes the order-help how-to (#2132 FAIL B) and nothing else.
     const empty = buildKnowledgeSources(snapshot());
-    expect(empty.sources).toEqual([]);
+    expect(empty.sources.map((s) => s.key)).toEqual([KNOWLEDGE_KEYS.orderHelp]);
     expect(empty.counts).toEqual({ products: 0, policies: 0, pages: 0 });
-    expect(empty.totalChars).toBe(0);
+    expect(empty.totalChars).toBe(empty.sources[0].content.length);
   });
 
   it("puts published products (online-store URL or ACTIVE) before unpublished ones, API order within each group", () => {
@@ -210,5 +211,31 @@ describe("buildKnowledgeSources — only sellable products are knowledge", () =>
     expect(out.fetched.products).toBe(5);
     // Excluding merchant-internal products is not a size truncation.
     expect(out.truncated).toBe(false);
+  });
+});
+
+// ── #2132 FAIL B: the "order help in this chat" how-to ───────────────────────
+// A guest asking "Where is my order?" must be told to SIGN IN (the visible Sign in
+// control) and offered a human — grounded in the store's own published knowledge,
+// so the answer never falls back to a generic "e-mail us" deflection.
+describe("buildKnowledgeSources — order help how-to (#2132)", () => {
+  it("is published FIRST, as a howto, naming the Sign in control, the account login URL, and the human option", () => {
+    const out = buildKnowledgeSources(snapshot({ shop: "acme.myshopify.com", shopName: "Acme" }));
+    const help = out.sources[0];
+    expect(help.key).toBe(KNOWLEDGE_KEYS.orderHelp);
+    expect(help.key).toMatch(KEY_RE);
+    expect(help.kind).toBe("howto");
+    expect(help.content).toContain('"Sign in" button at the top of this chat');
+    expect(help.content).toContain("https://acme.myshopify.com/account/login");
+    expect(help.content).toMatch(/talk to a human/);
+    expect(help.content).toContain("signed-in customers only");
+    expect(help.content.length).toBeLessThan(1_500);
+  });
+
+  it("survives a huge catalog (reserved before the store sections) and the total stays within the platform limit", () => {
+    const out = buildKnowledgeSources(snapshot({ products: Array.from({ length: 400 }, (_, i) => product(i + 1, 900)) }));
+    expect(out.sources[0].key).toBe(KNOWLEDGE_KEYS.orderHelp);
+    expect(out.totalChars).toBeLessThanOrEqual(KNOWLEDGE_LIMITS.totalChars);
+    expect(out.sources.every((s) => s.content.length <= KNOWLEDGE_LIMITS.perSourceChars)).toBe(true);
   });
 });
