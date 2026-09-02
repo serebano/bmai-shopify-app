@@ -4,7 +4,7 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
-## 2026-09-02 — main `0447ff3` (+ follow-up) · Shopify version **busymate-ai-5** · host `store.busymate.ai`
+## 2026-09-02 — main `0447ff3` → `ed2c9cc` → this · Shopify version **busymate-ai-5** · host `store.busymate.ai`
 
 App Store resubmission for busymate-devtools#2110 (review reference 132497).
 
@@ -26,6 +26,14 @@ App Store resubmission for busymate-devtools#2110 (review reference 132497).
 - **Onboarding / admin UX (5.1.3 / 5.1.5)** — setup checklist + theme-editor deep link,
   merchant Settings / Store connection / Conversations pages, branded error boundary,
   `/auth/login` never 500s, `/favicon.ico` + `/robots.txt`.
+- **Knowledge = sellable products only** — DRAFT and ARCHIVED products no longer reach the
+  assistant (seen live: "The Draft Snowboard — not published" listed to a shopper); they
+  still count in the "N of M" training state. `npm run kb:retrain -- <shop>` re-trains from
+  the shell through the same path as the merchant's button.
+- **Platform companion (busymate-devtools supabase 750)** — the projected knowledge
+  `updatedAt` is now Z-suffixed ISO; before it every trained tenant's `/support/<slug>`
+  landing 404'd (widget "refused to connect") because v2's strict `z.iso.datetime()`
+  rejected PostgREST's `+00:00` form. Trained stores were re-published after the fix.
 - **In-app navigation** — Polaris `Link url` / `Button url` now route through React
   Router inside the admin iframe (`app/components/PolarisLink.tsx`); a raw anchor
   reloaded a bare URL the embedded auth could not serve.
