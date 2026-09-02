@@ -24,6 +24,13 @@ import { readBillingState, syncBillingState } from "../lib/billingState.server";
 import { appGidFromEnv, fetchActiveSubscription, subscriptionStateFromPartnerApi } from "../lib/partnerApi";
 import { meterShop } from "../lib/usageBilling";
 import { parseMeterCursor } from "../lib/meterCursor";
+import { failClosedClientAction } from "../lib/clientAction";
+import { AppRouteBoundary } from "../components/AppRouteError";
+
+// Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
+// toast (never the root 500 page), and a route error recovers in-frame.
+export const clientAction = failClosedClientAction;
+export const ErrorBoundary = AppRouteBoundary;
 
 // The app handle from shopify.app.toml (`handle = "busymate-ai"`); the App
 // Pricing plan-selection page lives at /store/<store>/charges/<handle>/pricing_plans.

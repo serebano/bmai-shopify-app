@@ -4,6 +4,34 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-02 — fix: embedded actions fail closed on the client (the REAL Re-train 500) · host `store.busymate.ai`
+
+Follow-up to the hydration fix below (busymate-devtools#2110). Traced live in the admin iframe
+with a CDP network/console trace on the fixed build: the "500 Something went wrong" after
+**Re-train on my store** was NOT the hydration mismatch (that was real, and is gone — no React
+#418/#425/#423 at load any more) but a **failed action fetch**.
+
+- **Root cause** — the fetcher `POST /app/connector.data` died in transit (Chrome
+  `net::ERR_NETWORK_CHANGED`; nginx logged **499**), App Bridge's fetch wrapper rejected with
+  `TypeError: Failed to fetch`, and React Router turns a rejected action fetch into a **route
+  error** → root ErrorBoundary → the branded 500 page inside the frame — while the server-side
+  re-train had completed. Any transport failure (Wi-Fi blip, proxy, a 502 while the app restarts)
+  produces the same page.
+- **Fix** — `app/lib/clientAction.ts` `failClosedClientAction`: every child route with an `action`
+  exports `clientAction = failClosedClientAction`, which wraps `serverAction()` and resolves a
+  transport failure to `{ ok:false, error, transport:true }` (the routes' existing error toasts
+  render it; thrown Responses / route error responses are re-thrown — Shopify's session-token
+  bounce and redirects are untouched). The Connector page also revalidates on a transport failure
+  so "Last trained" shows the real server state.
+- **In-frame recovery** — `app/components/AppRouteError.tsx` `AppRouteBoundary`: every
+  `app/routes/app.*.tsx` child route exports it as `ErrorBoundary`, so a loader-revalidation or
+  render error shows a merchant-facing banner with **Try again** inside the app shell (NavMenu
+  stays) instead of the root 500 document.
+- **Tests** — `test/clientAction.test.ts` (rejection → fail-closed result with the submitted
+  intent; Response / route error re-thrown; merchant-facing messages; wiring derived from the
+  live route files — RED on the unwired routes), `test/appRouteError.test.ts` (SSR markup of the
+  recovery banner).
+
 ## 2026-09-02 — fix: Connector 500 on Re-train (hydration mismatch) · host `store.busymate.ai`
 
 Fixes a client-side "Something went wrong" 500 seen live when clicking **Re-train on my

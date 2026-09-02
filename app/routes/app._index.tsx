@@ -23,6 +23,13 @@ import { onAppInstalled } from "../bmai.server";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { planFor } from "../lib/plans";
+import { failClosedClientAction } from "../lib/clientAction";
+import { AppRouteBoundary } from "../components/AppRouteError";
+
+// Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
+// toast (never the root 500 page), and a route error recovers in-frame.
+export const clientAction = failClosedClientAction;
+export const ErrorBoundary = AppRouteBoundary;
 import {
   APP_EMBED_LABEL,
   EMBED_STEPS,

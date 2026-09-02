@@ -17,6 +17,13 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
 import { readTenantBranding } from "../lib/tenantRead.server";
+import { failClosedClientAction } from "../lib/clientAction";
+import { AppRouteBoundary } from "../components/AppRouteError";
+
+// Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
+// toast (never the root 500 page), and a route error recovers in-frame.
+export const clientAction = failClosedClientAction;
+export const ErrorBoundary = AppRouteBoundary;
 
 export const DEFAULT_ASSISTANT_NAME = "bro";
 
