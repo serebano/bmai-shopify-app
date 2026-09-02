@@ -1,0 +1,9 @@
+{
+  "name": "Busymate AI 도우미",
+  "settings": {
+    "launcher_label": {
+      "label": "채팅 버튼 레이블",
+      "info": "채팅을 여는 버튼의 문구입니다. 비워 두면 각 스토어 언어의 번역된 기본 문구를 사용합니다."
+    }
+  }
+}

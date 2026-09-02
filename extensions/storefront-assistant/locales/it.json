@@ -1,4 +1,6 @@
 {
   "launcher_label": "Chiedi a noi",
+  "launcher_aria_label": "Apri la chat dell'assistente del negozio",
+  "launcher_title": "Chatta con il nostro assistente",
   "assistant_name": "Assistente"
 }

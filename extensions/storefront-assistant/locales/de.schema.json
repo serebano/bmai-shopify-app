@@ -1,0 +1,9 @@
+{
+  "name": "Busymate AI Assistent",
+  "settings": {
+    "launcher_label": {
+      "label": "Beschriftung der Chat-Schaltfläche",
+      "info": "Text der Schaltfläche, die den Chat öffnet. Leer lassen, um in jeder Shop-Sprache den übersetzten Standardtext zu verwenden."
+    }
+  }
+}

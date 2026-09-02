@@ -1,0 +1,9 @@
+{
+  "name": "Busymate AI assistant",
+  "settings": {
+    "launcher_label": {
+      "label": "Launcher label",
+      "info": "The text on the chat launcher. Leave empty to use the translated default (\"Ask us\") in each storefront language."
+    }
+  }
+}
