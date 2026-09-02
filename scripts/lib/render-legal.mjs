@@ -117,7 +117,8 @@ export function markdownToHtml(md) {
 
 /** Full page: brand shell + nav + body + footer. */
 export function renderLegalHtml(md, title) {
-  const nav = LEGAL_PAGES.map((p) => `<a href="${p.route}">${p.route.replace("/legal/", "").replace(/^\w/, (c) => c.toUpperCase())}</a>`).join("");
+  const NAV_LABELS = { "/legal/privacy": "Privacy", "/legal/faq": "FAQ", "/legal/terms": "Terms" };
+  const nav = LEGAL_PAGES.map((p) => `<a href="${p.route}">${NAV_LABELS[p.route] ?? p.route}</a>`).join("");
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
