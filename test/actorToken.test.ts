@@ -197,3 +197,32 @@ describe("verifyActorToken (pure verifier)", () => {
     expect(verifyActorToken(mint(), { ...opts, master: "short" })).toBeNull();
   });
 });
+
+// ── #2132: the platform's SIGNED confirm acknowledgement ─────────────────────
+// Busymate AI releases a confirm-gated connector call through its approval card and
+// then mints the actor token with `confirmed: true` (v2 createSupportActorToken).
+// Before this fix the app read only the unsigned x-bmai-confirmed header, which the
+// platform never sends, so every approved cancel_order/create_refund answered
+// "Confirmation required" (issue #2132, the reviewer's "cancel my order" FAIL).
+describe("#2132 signed confirmed claim", () => {
+  it("verifyActorToken surfaces confirmed:true from the signed payload", () => {
+    const claims = verifyActorToken(mint({ payload: { confirmed: true } }), { master: MASTER, audience: AUD, now: NOW });
+    expect(claims?.confirmed).toBe(true);
+  });
+
+  it("verifyActorToken reports confirmed:false when the claim is absent or not boolean true", () => {
+    expect(verifyActorToken(mint(), { master: MASTER, audience: AUD, now: NOW })?.confirmed).toBe(false);
+    expect(verifyActorToken(mint({ payload: { confirmed: "1" } }), { master: MASTER, audience: AUD, now: NOW })?.confirmed).toBe(false);
+  });
+
+  it("resolveCaller honours the signed claim with NO x-bmai-confirmed header (the production shape)", async () => {
+    const caller = await resolveCaller(req(mint({ payload: { confirmed: true } })), deps());
+    expect(caller?.actor).toBe("bmai");
+    expect(caller?.confirmed).toBe(true);
+  });
+
+  it("resolveCaller stays unconfirmed when the signed claim is false and no header is present", async () => {
+    const caller = await resolveCaller(req(mint({ payload: { confirmed: false } })), deps());
+    expect(caller?.confirmed).toBe(false);
+  });
+});
