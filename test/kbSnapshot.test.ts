@@ -228,6 +228,8 @@ describe("buildKnowledgeSources — order help how-to (#2132)", () => {
     expect(help.content).toContain('"Sign in" button at the top of this chat');
     expect(help.content).toContain("https://acme.myshopify.com/account/login");
     expect(help.content).toMatch(/talk to a human/);
+    // The sign-in ask and the human offer live in ONE sentence, so a summary keeps both.
+    expect(help.content).toMatch(/two options: sign in with the "Sign in" button[^\n]*or ask to talk to a human/);
     expect(help.content).toContain("signed-in customers only");
     expect(help.content.length).toBeLessThan(1_500);
   });
