@@ -1,40 +1,45 @@
-import prisma from "../db.server";
-import { decryptField } from "../lib/fieldCipher";
-
-const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-07";
-
 export interface ShopifyAdminClient {
   shop: string;
   graphql(query: string, variables?: Record<string, unknown>): Promise<unknown>;
 }
 
 /**
- * An Admin GraphQL client bound to ONE shop's OFFLINE access token (persisted in
- * the Session table). This is how connector tools reach the store's data.
+ * Resolve the shop's OFFLINE session through the library — which loads it via the
+ * encrypting session storage and, under expiring offline tokens (#2110), REFRESHES
+ * it when it is within 5 minutes of expiry and stores the new one. Every
+ * background Admin call (MCP connector tools, KB ingest, billing reconcile, usage
+ * metering) therefore never presents a stale token.
+ *
+ * The Shopify app module is imported lazily: importing this client (from
+ * ingest/billing/tool modules) must not boot `shopifyApp()` — which validates the
+ * env and polls the Session table — at module load, so those modules stay
+ * unit-testable without a configured app.
+ */
+async function resolveAdmin(shop: string) {
+  const { unauthenticated } = await import("../shopify.server");
+  try {
+    return await unauthenticated.admin(shop);
+  } catch (err) {
+    if (err instanceof Error && err.name === "SessionNotFoundError") {
+      throw new Error(`no offline token for ${shop} — reinstall required`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * An Admin GraphQL client bound to ONE shop's offline session. Fails eagerly when
+ * the shop has no session (the MCP transport turns that into a clean tool error),
+ * and re-resolves the session on EVERY call so a refreshed token is always used —
+ * the client object may outlive a token's 1-hour lifetime.
  */
 export async function adminForShop(shop: string): Promise<ShopifyAdminClient> {
-  const session = await prisma.session.findFirst({
-    where: { shop, isOnline: false },
-    orderBy: { expires: "desc" },
-  });
-  if (!session?.accessToken) {
-    throw new Error(`no offline token for ${shop} — reinstall required`);
-  }
-  // The token is stored encrypted at rest (app/lib/fieldCipher.ts); decrypt for use.
-  // Legacy plaintext rows pass through unchanged.
-  const accessToken = decryptField(session.accessToken);
-  const endpoint = `https://${shop}/admin/api/${API_VERSION}/graphql.json`;
+  await resolveAdmin(shop);
   return {
     shop,
     async graphql(query, variables) {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-shopify-access-token": accessToken,
-        },
-        body: JSON.stringify({ query, variables: variables ?? {} }),
-      });
+      const { admin } = await resolveAdmin(shop);
+      const res = await admin.graphql(query, { variables: variables ?? {} });
       if (!res.ok) throw new Error(`Shopify Admin ${res.status}`);
       const json = (await res.json()) as { data?: unknown; errors?: unknown };
       if (json.errors) throw new Error(`Shopify Admin GraphQL errors: ${JSON.stringify(json.errors)}`);

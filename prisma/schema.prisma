@@ -11,7 +11,7 @@ datasource db {
 }
 
 /// Shopify session storage adapter table (@shopify/shopify-app-session-storage-prisma).
-/// Holds the offline access token per shop used by the Admin GraphQL connector.
+/// Holds the EXPIRING offline access token (+ refresh token) per shop used by the Admin GraphQL connector.
 model Session {
   id            String    @id
   shop          String
@@ -28,6 +28,9 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+  /// Expiring offline tokens (#2110): the rotating refresh credential (encrypted at rest) + its expiry.
+  refreshToken        String?
+  refreshTokenExpires DateTime?
 
   @@index([shop])
 }

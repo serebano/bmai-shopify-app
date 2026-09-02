@@ -28,7 +28,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 ## Build & tests (provable now, no owner creds)
 
-- [x] `npm run typecheck` clean (unified `@shopify/shopify-api` via overrides)
+- [x] `npm run typecheck` clean (one `@shopify/shopify-api` 14.0.1 dependency; no `overrides`)
 - [x] `npm run lint` clean (typescript-eslint parser wired into the flat config)
 - [x] `npm test` — 133 passing: provisioning seam + delegation flip · proof-of-shop +
   bmai OAuth token · **real connector tools (Admin GraphQL, no TODO stubs)** · GDPR
@@ -40,9 +40,16 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 ## Installation & auth
 
-- [x] **Managed installation** (token exchange, `unstable_newEmbeddedAuthStrategy`) — `app/shopify.server.ts`
+- [x] **Managed installation** (token exchange — the `@shopify/shopify-app-react-router` 2.x default) — `app/shopify.server.ts`
+- [x] **Expiring offline access tokens** (#2110) — `future.expiringOfflineAccessTokens: true`;
+  `Session.refreshToken`/`refreshTokenExpires` columns + migration `20260902120000_session_refresh_token`;
+  refresh token encrypted at rest; every background Admin call goes through
+  `unauthenticated.admin(shop)` (`app/mcp/shopifyAdmin.ts`) so it refreshes; pre-upgrade
+  sessions cycled once by `npm run tokens:cycle` (`scripts/cycle-offline-tokens.ts`, SETUP §3c)
+- [x] **`/auth/login` never 500s** — `app/routes/auth.login.tsx`: valid `?shop=` → Shopify's
+  managed-install redirect, otherwise → the branded root (no manual myshopify.com form, Req 2.3.1)
 - [x] **Embedded app** + App Bridge + Polaris — `app/routes/app.tsx`, `entry.server.tsx` (frame headers)
-- [x] Offline access token persisted — Prisma `Session` (`@shopify/shopify-app-session-storage-prisma`)
+- [x] Offline access token + refresh token persisted — Prisma `Session` (`@shopify/shopify-app-session-storage-prisma` 10)
 - [~] OAuth 2.1 discovery for the connector (DCR/PKCE/iss/resource) — `app/mcp/route.ts` (metadata shape; full AS is P2/P3)
 - [x] **Signed actor-token delegation verified app-side** — `app/mcp/actorToken.ts` +
   `app/mcp/auth.ts` HMAC-verify Busymate AI's HS256 actor token (per-(tenant,connector)
@@ -66,7 +73,9 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 - [x] `shop/redact` handler — full tenant teardown wired (`onShopRedact`)
 - [x] HMAC verification (fail-closed) via `authenticate.webhook`; the App-Proxy HMAC
   primitive (`verifyAppProxyHmac`) is independently unit-tested
-- [x] A failed compliance effect returns 500 (Shopify retries) — never silently green
+- [x] A failed compliance effect returns 500 (Shopify retries) — never silently green;
+  a shop with NO provisioned tenant answers `customers/data_request` / `customers/redact`
+  with a 200 no-op ("nothing held") instead of a 500 (#2110)
 
 ## Lifecycle webhooks
 
@@ -102,7 +111,11 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 - [x] **Theme app extension** (app-embed block; no `theme.liquid` edit) — `extensions/storefront-assistant/**`
 - [x] Widget loads via the platform embed (`/embed/v1.js`), deferred/async
 - [ ] Performance budget — widget must not regress storefront LCP/CLS (measure at P3)
-- [x] App Proxy identity path for logged-in customers — `identity.tsx` + HMAC verify
+- [x] App Proxy identity path for logged-in customers — `identity.tsx` + HMAC verify;
+  `[app_proxy]` declared in `shopify.app.toml` (`/apps/busymate-ai/*` → `store.busymate.ai`),
+  pinned to the extension's `IDENTITY_URL` by `test/appConfig.test.ts` (needs `shopify app deploy`)
+- [x] Branded 404/500 page (root `ErrorBoundary`, no framework developer hints) + real
+  `/favicon.ico` and `/robots.txt` under `public/`; `npm run build` pins `NODE_ENV=production`
 
 ## Privacy & data
 
