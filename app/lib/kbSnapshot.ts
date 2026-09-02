@@ -177,6 +177,17 @@ function isPublished(p: KbProduct): boolean {
   return Boolean(p.onlineStoreUrl) || (p.status ?? "").toUpperCase() === "ACTIVE";
 }
 
+/**
+ * Only SELLABLE products are knowledge: a DRAFT or ARCHIVED product is
+ * merchant-internal and must never be described to a shopper (seen live: the
+ * assistant listed "The Draft Snowboard — not published"). An unknown status is
+ * kept (the API always sets one; fail open on shape, closed on intent).
+ */
+export function isSellable(p: KbProduct): boolean {
+  const status = (p.status ?? "").toUpperCase();
+  return status !== "DRAFT" && status !== "ARCHIVED";
+}
+
 function renderProduct(p: KbProduct, shop: string): string | null {
   const title = (p.title ?? "").trim();
   if (!title) return null;
@@ -227,7 +238,10 @@ interface Section {
   header: string;
   items: string[];
   noun: string;
+  /** Rows the store has (for the "N of M" state). */
   fetched: number;
+  /** Rows eligible to be knowledge (fetched minus drafts/archived). */
+  renderable: number;
 }
 
 const SEP = "\n\n";
@@ -271,7 +285,10 @@ function pack(section: Section, cap: number): { content: string; included: numbe
 export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLimits = KNOWLEDGE_LIMITS): KnowledgeBuild {
   const shop = snapshot.shop;
   const storeName = (snapshot.shopName ?? "").trim() || shop;
-  const products = [...snapshot.products.filter(isPublished), ...snapshot.products.filter((p) => !isPublished(p))];
+  // Drafts/archived are dropped BEFORE ordering; online-store products first, then
+  // active products not on the online store (e.g. POS-only) in API order.
+  const sellable = snapshot.products.filter(isSellable);
+  const products = [...sellable.filter(isPublished), ...sellable.filter((p) => !isPublished(p))];
 
   const sections: Section[] = [
     {
@@ -283,6 +300,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
       items: snapshot.policies.map(renderPolicy).filter((x): x is string => Boolean(x)),
       noun: "policies",
       fetched: snapshot.policies.length,
+      renderable: snapshot.policies.length,
     },
     {
       id: "products",
@@ -293,6 +311,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
       items: products.map((p) => renderProduct(p, shop)).filter((x): x is string => Boolean(x)),
       noun: "products",
       fetched: snapshot.products.length,
+      renderable: sellable.length,
     },
     {
       id: "pages",
@@ -303,6 +322,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
       items: snapshot.pages.map((p) => renderPage(p, shop)).filter((x): x is string => Boolean(x)),
       noun: "pages",
       fetched: snapshot.pages.length,
+      renderable: snapshot.pages.length,
     },
   ];
 
@@ -321,7 +341,9 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
     const cap = Math.max(0, Math.min(limits.perSourceChars, remaining - reserveLater, fullLen(section)));
     const { content, included } = pack(section, cap);
     counts[section.id] = included;
-    if (included < section.items.length || section.items.length < section.fetched) truncated = true;
+    // Truncation = whole ITEMS that did not fit (or unrenderable rows), never the
+    // deliberate exclusion of drafts/archived products (counted in `fetched` only).
+    if (included < section.items.length || section.items.length < section.renderable) truncated = true;
     if (!content || sources.length >= limits.maxSources) return;
     sources.push({ key: section.key, label: section.label, kind: section.kind, content });
     remaining -= content.length;

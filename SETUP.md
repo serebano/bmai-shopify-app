@@ -152,7 +152,15 @@ and release the new app version so managed installation asks existing stores for
 added scope on their next app open. Check in the app DB (never the platform DB):
 `ShopTenant.kbTrainedAt` / `kbProducts` / `kbPolicies` / `kbPages` set and `kbError` NULL;
 Home shows "Trained on N products, M policies, K pages". Optional env:
-`KB_REINGEST_DEBOUNCE_MS` (webhook re-train quiet period, default 20000).
+`KB_REINGEST_DEBOUNCE_MS` (webhook re-train quiet period, default 20000). Only sellable
+products are knowledge — DRAFT and ARCHIVED products are excluded (counted in "of M").
+
+Re-train from the shell (same path as the merchant's button — e.g. after a platform-side
+change that needs every trained tenant re-projected):
+
+```bash
+sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; cd /opt/bmai-shopify-app && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
+```
 
 ## 3d. App Proxy (storefront identity) 🔒
 

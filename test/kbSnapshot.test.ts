@@ -106,8 +106,9 @@ describe("buildKnowledgeSources — shape", () => {
     expect(empty.totalChars).toBe(0);
   });
 
-  it("puts published products before drafts and keeps the API order within each group", () => {
-    const out = buildKnowledgeSources(snapshot({ products: [product(1, 40, false), product(2, 40, true), product(3, 40, true)] }));
+  it("puts published products (online-store URL or ACTIVE) before unpublished ones, API order within each group", () => {
+    const unpublished = { ...product(1, 40, true), onlineStoreUrl: null, status: null };
+    const out = buildKnowledgeSources(snapshot({ products: [unpublished, product(2, 40, true), product(3, 40, true)] }));
     const c = out.sources.find((s) => s.key === KNOWLEDGE_KEYS.products)!.content;
     expect(c.indexOf("Product 2")).toBeLessThan(c.indexOf("Product 3"));
     expect(c.indexOf("Product 3")).toBeLessThan(c.indexOf("Product 1"));
@@ -179,5 +180,35 @@ describe("buildKnowledgeSources — limits (deterministic, most-important first)
     expect(out.sources[0].content.length).toBeLessThanOrEqual(1_500);
     expect(out.counts.products).toBeGreaterThan(0);
     expect(out.counts.products).toBeLessThan(30);
+  });
+});
+
+// #2110 (seen live on the demo store): the assistant listed "The Draft Snowboard —
+// Not published on the online store" and "The Archived Snowboard" to a shopper.
+// Drafts and archived products are merchant-internal — never knowledge.
+describe("buildKnowledgeSources — only sellable products are knowledge", () => {
+  const base = { descriptionHtml: "<p>Board</p>", priceRangeV2: { minVariantPrice: { amount: "10.00", currencyCode: "USD" } } };
+  it("excludes DRAFT and ARCHIVED products but counts them as fetched", () => {
+    const out = buildKnowledgeSources(
+      snapshot({
+        products: [
+          { ...base, title: "Live board", handle: "live", status: "ACTIVE", onlineStoreUrl: "https://s.myshopify.com/products/live" },
+          { ...base, title: "Draft board", handle: "draft", status: "DRAFT", onlineStoreUrl: null },
+          { ...base, title: "Archived board", handle: "archived", status: "ARCHIVED", onlineStoreUrl: null },
+          { ...base, title: "POS-only board", handle: "pos", status: "ACTIVE", onlineStoreUrl: null },
+          { ...base, title: "Unknown-status board", handle: "unknown", status: null, onlineStoreUrl: "https://s.myshopify.com/products/unknown" },
+        ],
+      }),
+    );
+    const c = out.sources.find((s) => s.key === KNOWLEDGE_KEYS.products)!.content;
+    expect(c).toContain("Live board");
+    expect(c).toContain("POS-only board");
+    expect(c).toContain("Unknown-status board");
+    expect(c).not.toContain("Draft board");
+    expect(c).not.toContain("Archived board");
+    expect(out.counts.products).toBe(3);
+    expect(out.fetched.products).toBe(5);
+    // Excluding merchant-internal products is not a size truncation.
+    expect(out.truncated).toBe(false);
   });
 });
