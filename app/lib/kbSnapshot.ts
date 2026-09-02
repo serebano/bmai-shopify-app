@@ -75,10 +75,30 @@ export const KNOWLEDGE_LIMITS: KnowledgeLimits = { perSourceChars: 20_000, total
 
 /** Stable keys — re-publishing a key REPLACES that source on the platform. */
 export const KNOWLEDGE_KEYS = {
+  orderHelp: "shopify:order-help",
   policies: "shopify:policies",
   products: "shopify:products",
   pages: "shopify:pages",
 } as const;
+
+/**
+ * The store's "order help in this chat" how-to (#2132 FAIL B). Grounded knowledge
+ * the assistant can cite when a shopper asks about THEIR order: signed-in shoppers
+ * get status/tracking/returns/cancellation in chat through the store connection;
+ * a shopper who is NOT signed in is told to use the Sign in control at the top of
+ * the chat (or the store's account login) and ask again, and can ask for a human.
+ * Rendered FIRST and reserved out of the budget, so a huge catalog never starves it.
+ */
+export function renderOrderHelp(shop: string, storeName: string): string {
+  const login = `https://${shop}/account/login`;
+  return [
+    `# Order help in this chat — ${storeName} (${shop})`,
+    "Order status, tracking, returns and cancellations are handled in this chat for signed-in customers only, and only for that customer's own orders.",
+    `If you are not signed in: use the "Sign in" button at the top of this chat (or sign in at ${login}) and then ask again, for example "Where is my order #1001?". The assistant then looks up your order for you.`,
+    "Changes such as cancelling an order, starting a return or updating a shipping address are confirmed with you in the chat before anything happens.",
+    "Prefer a person? Ask to talk to a human at any time and the request goes to the store's team.",
+  ].join("\n\n");
+}
 
 export interface KnowledgeCounts {
   products: number;
@@ -231,7 +251,7 @@ function renderPage(p: KbPage, shop: string): string | null {
 }
 
 interface Section {
-  id: keyof typeof KNOWLEDGE_KEYS;
+  id: keyof KnowledgeCounts;
   key: string;
   label: string;
   kind: KnowledgeKind;
@@ -334,6 +354,14 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
   const fetched: KnowledgeCounts = { products: 0, policies: 0, pages: 0 };
   let remaining = limits.totalChars;
   let truncated = false;
+
+  // #2132 FAIL B — the order-help how-to is ALWAYS published first (a few hundred
+  // chars, reserved before the store sections share the rest of the budget).
+  const orderHelp = renderOrderHelp(shop, storeName);
+  if (orderHelp.length <= Math.min(limits.perSourceChars, remaining) && sources.length < limits.maxSources) {
+    sources.push({ key: KNOWLEDGE_KEYS.orderHelp, label: "Order help in this chat", kind: "howto", content: orderHelp });
+    remaining -= orderHelp.length;
+  }
 
   sections.forEach((section, i) => {
     fetched[section.id] = section.fetched;
