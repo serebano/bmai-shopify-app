@@ -15,6 +15,8 @@
  * PUBLIC storefront HTML (does it load the extension asset?). A password-
  * protected dev store or any non-200 is "unknown" — never a false "off".
  */
+import { formatServerTime } from "./formatTime";
+
 export const STOREFRONT_ASSISTANT_EXTENSION_UUID = "01a04ae4-bf97-7e8d-b8a4-a9c4cd3b4854";
 /** blocks/assistant.liquid → the block handle in `activateAppId=<uuid>/<block>`. */
 export const STOREFRONT_ASSISTANT_BLOCK = "assistant";
@@ -108,11 +110,15 @@ export function trainingSummary(counts: TrainingCounts | null | undefined, fetch
   return `${part(counts.products, fetched?.products, "products")}, ${part(counts.policies, fetched?.policies, "policies")}, ${part(counts.pages, fetched?.pages, "pages")}`;
 }
 
-/** Human date for "last trained" (ISO → e.g. "2 Sep 2026, 10:00"). */
+/**
+ * Human date for "last trained" (ISO → e.g. "2 Sep 2026, 10:00 UTC"). Delegates
+ * to the shared deterministic formatter so the app has ONE time-zone-safe render
+ * path (#retrain-500). This string is server-rendered into the Home checklist, so
+ * it MUST stay UTC-fixed — a bare toLocaleString here would reintroduce the
+ * hydration mismatch.
+ */
 export function formatTrainedAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+  return formatServerTime(iso, iso);
 }
 
 /** Written steps rendered next to the primary "Turn on" button. */

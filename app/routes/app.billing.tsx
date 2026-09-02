@@ -17,6 +17,7 @@ import {
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { PLANS, describePlan, planFor } from "../lib/plans";
+import { LocalTime } from "../components/LocalTime";
 import { managedPricingUrl, resolveBillingAccess } from "../lib/billingGate";
 import { subscriptionStateFromInstallation, subscriptionStateFromPlanHandle } from "../lib/billingSync";
 import { readBillingState, syncBillingState } from "../lib/billingState.server";
@@ -182,7 +183,12 @@ export default function BillingPage() {
                 </InlineGrid>
                 <Text as="p" tone="subdued">
                   {describePlan(planFor(data.planId))}
-                  {data.trialEndsAt ? ` · trial ends ${new Date(data.trialEndsAt).toLocaleDateString()}` : ""}
+                  {data.trialEndsAt ? (
+                    <>
+                      {" · trial ends "}
+                      <LocalTime iso={data.trialEndsAt} dateOnly />
+                    </>
+                  ) : null}
                 </Text>
                 <Text as="p" tone="subdued">
                   This billing cycle: {data.usage.cycleResolutions} of {data.usage.included} included resolutions used

@@ -20,6 +20,8 @@ import { onAppInstalled } from "../bmai.server";
 import { connectorEndpoint } from "../lib/connector";
 import { readTrainingState, runRetrain } from "../lib/retrain.server";
 import { trainingSummary } from "../lib/themeEmbed";
+import { runConnectorAction } from "../lib/connectorAction.server";
+import { LocalTime } from "../components/LocalTime";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -40,32 +42,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
-  if (intent === "reprovision") {
-    // Idempotent re-run of the full lifecycle. NEVER PARK: an errored install is
-    // retryable here rather than stuck.
-    await onAppInstalled(session);
-    const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-    return { intent, ok: tenant?.provisionState === "published", state: tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? null };
-  }
-  if (intent === "retrain") {
-    // Synchronous: fetch → compress → publish → persist, then report the REAL state.
-    const r = await runRetrain(session.shop);
-    return {
-      intent,
-      ok: r.ok,
-      state: r.ok ? "trained" : "failed",
-      error: r.error ?? null,
-      trainedAt: r.state.trainedAt,
-      counts: r.state.counts,
-      summary: trainingSummary(r.state.counts, r.state.fetched),
-    };
-  }
-  return { intent, ok: false, state: "unknown", error: "unknown action" };
+  // The action ALWAYS resolves to a JSON result the fetcher renders in-frame —
+  // runConnectorAction catches a failing intent so it can never throw a 500 into
+  // the embedded admin (#retrain-500). Both intents run synchronously and report
+  // the REAL persisted state, never a fabricated success.
+  return runConnectorAction(intent, {
+    reprovision: async () => {
+      // Idempotent re-run of the full lifecycle. NEVER PARK: an errored install is
+      // retryable here rather than stuck.
+      await onAppInstalled(session);
+      const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
+      return {
+        ok: tenant?.provisionState === "published",
+        state: tenant?.provisionState ?? "pending",
+        error: tenant?.provisionError ?? null,
+      };
+    },
+    retrain: async () => {
+      // Synchronous: fetch → compress → publish → persist, then report the REAL state.
+      const r = await runRetrain(session.shop);
+      return {
+        ok: r.ok,
+        state: r.ok ? "trained" : "failed",
+        error: r.error ?? null,
+        trainedAt: r.state.trainedAt,
+        counts: r.state.counts,
+        summary: trainingSummary(r.state.counts, r.state.fetched),
+      };
+    },
+  });
 };
-
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "never";
-}
 
 export default function ConnectorPage() {
   const data = useLoaderData<typeof loader>();
@@ -110,8 +116,7 @@ export default function ConnectorPage() {
                   and nothing more.
                 </Text>
                 <Text as="p">
-                  Last set up: {when(data.provisionedAt)}
-                  {data.provisionError ? "" : ""}
+                  Last set up: <LocalTime iso={data.provisionedAt} fallback="never" />
                 </Text>
                 {data.provisionError ? (
                   <Text as="p" tone="critical">
@@ -166,7 +171,7 @@ export default function ConnectorPage() {
                   or policy changes; product updates re-train automatically.
                 </Text>
                 <Text as="p">
-                  Last trained: {when(data.training.trainedAt)}
+                  Last trained: <LocalTime iso={data.training.trainedAt} fallback="never" />
                   {data.training.summary ? ` · trained on ${data.training.summary}` : ""}
                   {data.training.truncated ? " · the catalogue was trimmed to fit the assistant's knowledge limit (most important items first)" : ""}
                 </Text>

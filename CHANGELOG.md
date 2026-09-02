@@ -4,6 +4,31 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-02 — fix: Connector 500 on Re-train (hydration mismatch) · host `store.busymate.ai`
+
+Fixes a client-side "Something went wrong" 500 seen live when clicking **Re-train on my
+store** (busymate-devtools#2110). No code released a new Shopify version — server + client
+code only.
+
+- **Root cause** — a React **hydration mismatch**. Merchant timestamps were rendered during
+  SSR with a bare `new Date(iso).toLocaleString()` (Connector "Last set up" / "Last trained",
+  Conversations table, Billing trial-end). The Node host (UTC) and the merchant's browser
+  (their own time zone) produced different text, so every embedded load threw React
+  #418/#425/#423; inside the App Bridge iframe the hydration failure escalated to the root
+  ErrorBoundary — the branded "Something went wrong" page — and the in-flight fetcher POST was
+  aborted (nginx **499**). The action itself succeeded server-side; the host never returned a 500.
+- **Fix** — `app/lib/formatTime.ts` (`formatServerTime`, UTC-pinned + deterministic) and
+  `app/components/LocalTime.tsx` render the deterministic string on the server and the client's
+  first paint (identical → clean hydration), then upgrade to the merchant's local time in a
+  post-mount effect. All three routes now render `<LocalTime>`; `themeEmbed.formatTrainedAt`
+  delegates to the shared formatter.
+- **Fail-closed action** — `app/lib/connectorAction.server.ts` wraps the Connector action so a
+  throwing re-train / re-provision resolves to `{ ok:false, error }` (an error toast) instead of
+  throwing a 500 into the frame.
+- **Tests** — `test/formatTime.test.ts` (deterministic + byte-identical across UTC / LA / Kolkata),
+  `test/localTime.test.ts` (SSR markup == deterministic string), `test/connectorAction.test.ts`
+  (the action never throws; fails closed).
+
 ## 2026-09-02 — main `0447ff3` → `ed2c9cc` → this · Shopify version **busymate-ai-5** · host `store.busymate.ai`
 
 App Store resubmission for busymate-devtools#2110 (review reference 132497).
