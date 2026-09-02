@@ -94,9 +94,9 @@ export function renderOrderHelp(shop: string, storeName: string): string {
   return [
     `# Order help in this chat — ${storeName} (${shop})`,
     "Order status, tracking, returns and cancellations are handled in this chat for signed-in customers only, and only for that customer's own orders.",
-    `If you are not signed in: use the "Sign in" button at the top of this chat (or sign in at ${login}) and then ask again, for example "Where is my order #1001?". The assistant then looks up your order for you.`,
+    `If you are not signed in, you have two options: sign in with the "Sign in" button at the top of this chat (or at ${login}) and then ask again — for example "Where is my order #1001?" — or ask to talk to a human and the store's team will help you with your order. Always offer both.`,
     "Changes such as cancelling an order, starting a return or updating a shipping address are confirmed with you in the chat before anything happens.",
-    "Prefer a person? Ask to talk to a human at any time and the request goes to the store's team.",
+    "Prefer a person at any point? Ask to talk to a human and the request goes to the store's team.",
   ].join("\n\n");
 }
 
