@@ -7,6 +7,7 @@ import enPolarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticate } from "../shopify.server";
+import { PolarisLink } from "../components/PolarisLink";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -19,7 +20,10 @@ export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
   return (
     <AppProvider apiKey={apiKey}>
-      <PolarisAppProvider i18n={enPolarisTranslations}>
+      {/* linkComponent: Polaris <Link url>/<Button url> must stay client-side inside the
+          admin iframe (app/components/PolarisLink.tsx) — a raw anchor reloads a bare URL
+          the embedded auth cannot serve. */}
+      <PolarisAppProvider i18n={enPolarisTranslations} linkComponent={PolarisLink}>
         <NavMenu>
           <Link to="/app" rel="home">
             Home

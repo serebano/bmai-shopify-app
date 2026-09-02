@@ -128,7 +128,8 @@ export async function trainTenant(input: TrainInput, deps: TrainDeps): Promise<T
 
 // ---- Webhook re-ingest debounce ---------------------------------------------
 
-export type ReingestReason = "products" | "orders";
+/** products: catalog webhooks · scopes: a scope grant (app/scopes_update) · orders: never re-trains. */
+export type ReingestReason = "products" | "scopes" | "orders";
 
 export interface ReingestScheduler {
   /** Queue a re-train for the shop after a quiet period; a burst coalesces into one run. */

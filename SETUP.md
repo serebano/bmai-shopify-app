@@ -79,7 +79,7 @@ sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app fetch origin
 sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app checkout <shipped sha>
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
-sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training)
+sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training); reads DATABASE_URL from the deploy-owned .env
 sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
 systemctl restart bmai-shopify-app
 curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
@@ -116,10 +116,15 @@ cycle the install base once, on the host, as `deploy`, with the env sourced —
 never echo a value:
 
 ```bash
+# The env file is root-owned 0600 (deploy cannot read it): source it as root and
+# hand it to `deploy` through the ENVIRONMENT (sudo -E), never argv or a copy.
 cd /opt/bmai-shopify-app
-sudo -u deploy bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; npm run tokens:cycle -- --dry-run'   # lists candidate shops
-sudo -u deploy bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; npm run tokens:cycle'                # exchanges + stores
+sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle -- --dry-run'   # lists candidate shops
+sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle'                # exchanges + stores
 ```
+
+Done on the host 2026-09-02 (build `0447ff3`): 2 scanned, 2 cycled, 0 failed — both
+offline sessions now expire ≈ +1h with `refreshTokenExpires` set.
 
 `scripts/cycle-offline-tokens.ts` (core `app/lib/cycleOfflineTokens.ts`, unit-tested)
 reads every offline session through the app's encrypting session storage, exchanges
