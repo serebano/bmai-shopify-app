@@ -30,6 +30,7 @@ import {
   detectStorefrontEmbed,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
+  trainingSummary,
 } from "../lib/themeEmbed";
 
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
@@ -51,6 +52,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     embed,
     trainedAt: training.trainedAt,
     trainError: training.error,
+    counts: training.counts,
+    fetched: training.fetched,
+    truncated: training.truncated,
     planId: access.planId,
     hasSubscription: tenant?.billing?.status === "active" || tenant?.billing?.status === "pending",
   });
@@ -60,6 +64,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     provisionState,
     provisionError: tenant?.provisionError ?? null,
     connectorReady: Boolean(tenant?.connectorId),
+    training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
     embed,
     steps,
     embedSteps: EMBED_STEPS,
@@ -226,6 +231,21 @@ export default function Index() {
                     : "Not connected yet — order lookups are unavailable until the connection registers. Retry from the Store connection page."}
                 </Text>
                 <Link url="/app/connector">Manage store connection</Link>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text as="h3" variant="headingSm">
+                  Training
+                </Text>
+                <Text as="p" tone="subdued">
+                  {data.training.error
+                    ? `Training failed: ${data.training.error}`
+                    : data.training.summary
+                      ? `Trained on ${data.training.summary}.`
+                      : "Not trained yet — the assistant learns your products, policies and pages when setup completes."}
+                </Text>
+                <Link url="/app/connector">Re-train</Link>
               </BlockStack>
             </Card>
             <Card>

@@ -19,6 +19,7 @@ import prisma from "../db.server";
 import { onAppInstalled } from "../bmai.server";
 import { connectorEndpoint } from "../lib/connector";
 import { readTrainingState, runRetrain } from "../lib/retrain.server";
+import { trainingSummary } from "../lib/themeEmbed";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -31,7 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     provisionState: tenant?.provisionState ?? "pending",
     provisionError: tenant?.provisionError ?? null,
     provisionedAt: tenant?.publishedAt ? new Date(tenant.publishedAt).toISOString() : null,
-    training,
+    training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
   };
 };
 
@@ -47,8 +48,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { intent, ok: tenant?.provisionState === "published", state: tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? null };
   }
   if (intent === "retrain") {
+    // Synchronous: fetch → compress → publish → persist, then report the REAL state.
     const r = await runRetrain(session.shop);
-    return { intent, ok: r.ok, state: "trained", error: r.error ?? null, trainedAt: r.state.trainedAt, counts: r.state.counts };
+    return {
+      intent,
+      ok: r.ok,
+      state: r.ok ? "trained" : "failed",
+      error: r.error ?? null,
+      trainedAt: r.state.trainedAt,
+      counts: r.state.counts,
+      summary: trainingSummary(r.state.counts, r.state.fetched),
+    };
   }
   return { intent, ok: false, state: "unknown", error: "unknown action" };
 };
@@ -67,7 +77,8 @@ export default function ConnectorPage() {
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
       const d = fetcher.data;
-      if (d.intent === "retrain") shopify.toast.show(d.ok ? "Re-training started" : `Re-train failed: ${d.error ?? "unknown"}`, { isError: !d.ok });
+      if (d.intent === "retrain")
+        shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : `Re-train failed: ${d.error ?? "unknown"}`, { isError: !d.ok });
       if (d.intent === "reprovision") shopify.toast.show(d.ok ? "Store connection is live" : `Still not live: ${d.error ?? d.state}`, { isError: !d.ok });
     }
   }, [fetcher.state, fetcher.data, shopify]);
@@ -156,9 +167,8 @@ export default function ConnectorPage() {
                 </Text>
                 <Text as="p">
                   Last trained: {when(data.training.trainedAt)}
-                  {data.training.counts.products !== null
-                    ? ` · ${data.training.counts.products} products, ${data.training.counts.pages ?? 0} pages, ${data.training.counts.policies ?? 0} policies`
-                    : ""}
+                  {data.training.summary ? ` · trained on ${data.training.summary}` : ""}
+                  {data.training.truncated ? " · the catalogue was trimmed to fit the assistant's knowledge limit (most important items first)" : ""}
                 </Text>
                 {data.training.error ? (
                   <Text as="p" tone="critical">

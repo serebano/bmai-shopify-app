@@ -100,4 +100,38 @@ describe("buildSetupChecklist (Home)", () => {
     });
     expect(steps[0]).toMatchObject({ id: "provisioned", done: false, failed: true });
   });
+  it("the trained step reads 'Trained on N products, M policies, K pages' with the counts + the re-train hint", () => {
+    const steps = buildSetupChecklist({
+      provisionState: "published",
+      connectorReady: true,
+      embed: "on",
+      trainedAt: "2026-09-02T10:00:00.000Z",
+      trainError: null,
+      counts: { products: 62, policies: 3, pages: 4 },
+      truncated: true,
+      fetched: { products: 250, policies: 3, pages: 4 },
+      planId: null,
+      hasSubscription: false,
+    });
+    const trained = steps.find((s) => s.id === "trained")!;
+    expect(trained.done).toBe(true);
+    expect(trained.detail).toMatch(/Trained on 62 of 250 products, 3 policies, 4 pages/);
+    expect(trained.detail).toMatch(/[Rr]e-train/);
+  });
+  it("a training error is a failed step whose detail carries the error and the re-train hint", () => {
+    const steps = buildSetupChecklist({
+      provisionState: "published",
+      connectorReady: true,
+      embed: "on",
+      trainedAt: null,
+      trainError: "Shopify Admin 403",
+      counts: { products: null, policies: null, pages: null },
+      planId: null,
+      hasSubscription: false,
+    });
+    const trained = steps.find((s) => s.id === "trained")!;
+    expect(trained).toMatchObject({ done: false, failed: true });
+    expect(trained.detail).toMatch(/Shopify Admin 403/);
+    expect(trained.detail).toMatch(/[Rr]e-train/);
+  });
 });

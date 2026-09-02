@@ -76,14 +76,43 @@ export interface SetupStep {
   failed: boolean;
 }
 
+export interface TrainingCounts {
+  products: number | null;
+  policies: number | null;
+  pages: number | null;
+}
+
 export interface SetupInput {
   provisionState: string;
   connectorReady: boolean;
   embed: EmbedStatus;
   trainedAt: string | null;
   trainError: string | null;
+  /** Items the assistant was trained on (ShopTenant.kb*); null = unknown/never. */
+  counts?: TrainingCounts | null;
+  /** Items the store has — "N of M" when the catalog was truncated to fit. */
+  fetched?: Partial<TrainingCounts> | null;
+  truncated?: boolean | null;
   planId: string | null;
   hasSubscription: boolean;
+}
+
+/** "62 of 250 products, 3 policies, 4 pages" — the honest training summary. */
+export function trainingSummary(counts: TrainingCounts | null | undefined, fetched?: Partial<TrainingCounts> | null): string | null {
+  if (!counts || counts.products === null) return null;
+  const part = (n: number | null, total: number | null | undefined, noun: string) => {
+    const count = n ?? 0;
+    const shown = typeof total === "number" && total > count ? `${count} of ${total}` : `${count}`;
+    return `${shown} ${noun}`;
+  };
+  return `${part(counts.products, fetched?.products, "products")}, ${part(counts.policies, fetched?.policies, "policies")}, ${part(counts.pages, fetched?.pages, "pages")}`;
+}
+
+/** Human date for "last trained" (ISO → e.g. "2 Sep 2026, 10:00"). */
+export function formatTrainedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
 }
 
 /** Written steps rendered next to the primary "Turn on" button. */
@@ -131,9 +160,9 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
       id: "trained",
       title: "Trained on your store",
       detail: s.trainError
-        ? `Training failed: ${s.trainError}`
+        ? `Training failed: ${s.trainError} — fix the cause, then re-train from Store connection.`
         : trained
-          ? `Last trained ${s.trainedAt}.`
+          ? `Trained on ${trainingSummary(s.counts, s.fetched) ?? "your products, policies and pages"} · last trained ${formatTrainedAt(s.trainedAt!)} · product changes re-train automatically; re-train from Store connection after policy or page changes.`
           : "Not trained yet — the assistant answers from your products, pages and policies once training completes.",
       done: trained,
       failed: Boolean(s.trainError),

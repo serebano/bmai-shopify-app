@@ -28,6 +28,8 @@
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
 import { brandingArgs, publishArgs } from "./mgmtArgs";
+import type { KnowledgeBuild, KnowledgeCounts } from "./kbSnapshot";
+import { isKnowledgeRejection, publishOptionsFor, trainingPatch, type TrainingPatch } from "./kbTrain";
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -46,6 +48,7 @@ export interface TenantRecord {
   bmaiTenantId?: string | null;
   customDomain?: string | null;
   connectorId?: string | null;
+  provisionState?: string | null;
 }
 
 export type TenantPatch = {
@@ -55,7 +58,15 @@ export type TenantPatch = {
   provisionState?: "provisioning" | "published" | "suspended" | "error";
   provisionError?: string | null;
   publishedAt?: Date | null;
-};
+} & Partial<TrainingPatch>;
+
+/** The runtime origins every publish carries (install AND re-train use the same). */
+export function runtimeOrigins(shop: string, slug: string, customDomain?: string | null): { launchOrigins: string[]; embedOrigins: string[] } {
+  return {
+    launchOrigins: [servingHost(slug)],
+    embedOrigins: [`https://${shop}`, ...(customDomain ? [`https://${customDomain}`] : [])],
+  };
+}
 
 export interface ProvisionDeps {
   /** MCP `tools/call` — the ONLY control-plane effect channel. */
@@ -83,6 +94,20 @@ export interface ProvisionDeps {
    * before the master is provisioned would be green-while-dead.
    */
   delegationReady: boolean;
+  /**
+   * Build the store's knowledge (products/policies/pages → `knowledge_sources`,
+   * app/lib/kbFetch.ts) so the tenant is TRAINED in the same publish that takes
+   * it live. Optional: the ops verify script has no shop session. A throw is a
+   * soft failure — recorded as kbError + warned, the tenant still goes live.
+   */
+  buildKnowledge?: (shop: string) => Promise<KnowledgeBuild>;
+}
+
+export interface TrainingSummary {
+  ok: boolean;
+  error?: string;
+  counts: KnowledgeCounts;
+  truncated: boolean;
 }
 
 export interface ProvisionOutcome {
@@ -94,6 +119,10 @@ export interface ProvisionOutcome {
   calls: string[];
   /** Non-fatal step failures (best-effort steps that did not abort). */
   warnings: string[];
+  /** provision_partner_tenant brought an ARCHIVED (uninstalled) tenant back (reinstall). */
+  reactivated: boolean;
+  /** What the tenant was trained on in this run (null when no buildKnowledge dep). */
+  training: TrainingSummary | null;
 }
 
 /** The tenant's derived serving host (the bmdev slug lane). */
@@ -116,9 +145,10 @@ export const CONNECTOR_POLICIES = {
 
 /**
  * Run the full lifecycle:
- *   provision_partner_tenant (proof) → set_tenant_branding → add_tenant_embed_origin
- *   (proof) → add_tenant_admin (best-effort, operator) → upsert connector
- *   → publish_tenant_runtime
+ *   provision_partner_tenant (proof; reactivates an archived tenant on reinstall)
+ *   → set_tenant_branding → add_tenant_embed_origin (proof) → upsert connector
+ *   → buildKnowledge (products/policies/pages → knowledge_sources)
+ *   → publish_tenant_runtime (origins + knowledge — ONE publish)
  */
 export async function runProvisionLifecycle(
   session: ProvisionSession,
@@ -146,7 +176,7 @@ export async function runProvisionLifecycle(
   await deps.saveTenant(shop, { slug, provisionState: "provisioning", provisionError: null });
 
   // 1) Provision — LOAD-BEARING. Proof-of-shop OR operator; idempotent by shop.
-  const provisioned = await call<{ tenant_id: string }>("provision_partner_tenant", {
+  const provisioned = await call<{ tenant_id: string; created?: boolean; reactivated?: boolean }>("provision_partner_tenant", {
     partner,
     shop,
     slug,
@@ -154,15 +184,17 @@ export async function runProvisionLifecycle(
   });
   if (!provisioned.ok) {
     await deps.saveTenant(shop, { provisionState: "error", provisionError: provisioned.error });
-    return { ok: false, tenantId: null, connectorId: null, error: provisioned.error, calls, warnings };
+    return { ok: false, tenantId: null, connectorId: null, error: provisioned.error, calls, warnings, reactivated: false, training: null };
   }
   const tenantId = provisioned.data?.tenant_id ?? existing?.bmaiTenantId ?? null;
+  // REINSTALL: app/uninstalled archived the tenant (suspend_tenant); under a valid
+  // proof provision_partner_tenant reactivates it (status active + runtime
+  // re-projection) and says so. The publish below re-takes it live either way.
+  const reactivated = provisioned.data?.reactivated === true;
 
   // Storefront parent origins allowed to iframe-embed the assistant.
-  const storefrontOrigins = [
-    `https://${shop}`,
-    ...(existing?.customDomain ? [`https://${existing.customDomain}`] : []),
-  ];
+  const origins = runtimeOrigins(shop, slug, existing?.customDomain);
+  const storefrontOrigins = origins.embedOrigins;
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
   //    provisioner needs NO platform-operator role; #1982 security follow-up #5).
@@ -209,19 +241,47 @@ export async function runProvisionLifecycle(
   const connectorId =
     connector.data?.id ?? connector.data?.connector?.id ?? existing?.connectorId ?? null;
 
-  // 6) Publish the runtime — LOAD-BEARING (the step that makes the widget resolve).
-  const published = await call(
-    "publish_tenant_runtime",
-    publishArgs(proof, tenantId, { launchOrigins: [servingHost(slug)], embedOrigins: storefrontOrigins }),
-  );
+  // 6) Train — build the store knowledge (products / policies / pages) so the
+  //    publish below carries `knowledge_sources`. SOFT: a failure is persisted as
+  //    kbError + surfaced on Home/Store connection, and the tenant still goes live
+  //    (an un-trained assistant that says so beats no assistant at all).
+  let knowledge: KnowledgeBuild | null = null;
+  let training: TrainingPatch | null = null;
+  let trainingSummary: TrainingSummary | null = null;
+  if (deps.buildKnowledge) {
+    try {
+      knowledge = await deps.buildKnowledge(shop);
+      training = trainingPatch(knowledge, new Date());
+      trainingSummary = { ok: true, counts: knowledge.counts, truncated: knowledge.truncated };
+    } catch (err) {
+      const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+      warnings.push(`knowledge: ${message}`);
+      training = { kbError: message };
+      trainingSummary = { ok: false, error: message, counts: { products: 0, policies: 0, pages: 0 }, truncated: false };
+    }
+  }
+
+  // 7) Publish the runtime — LOAD-BEARING (the step that makes the widget resolve).
+  //    ONE publish carrying origins + knowledge. If the edge refuses the KNOWLEDGE
+  //    payload specifically, re-publish without it so the tenant is still live and
+  //    the rejection is surfaced as the training error.
+  let published = await call<{ revision?: number }>("publish_tenant_runtime", publishArgs(proof, tenantId, publishOptionsFor(knowledge, origins)));
+  if (!published.ok && knowledge && knowledge.sources.length && isKnowledgeRejection(published.error)) {
+    const message = `publish_tenant_runtime: ${published.error ?? "failed"}`.slice(0, 500);
+    warnings.push(`knowledge: ${message}`);
+    training = { kbError: message };
+    trainingSummary = { ok: false, error: message, counts: knowledge.counts, truncated: knowledge.truncated };
+    published = await call("publish_tenant_runtime", publishArgs(proof, tenantId, publishOptionsFor(null, origins)));
+  }
   if (!published.ok) {
     await deps.saveTenant(shop, {
       bmaiTenantId: tenantId,
       connectorId,
       provisionState: "error",
       provisionError: `publish_tenant_runtime: ${published.error ?? "failed"}`,
+      ...(training ?? {}),
     });
-    return { ok: false, tenantId, connectorId, error: published.error, calls, warnings };
+    return { ok: false, tenantId, connectorId, error: published.error, calls, warnings, reactivated, training: trainingSummary };
   }
 
   await deps.saveTenant(shop, {
@@ -230,9 +290,10 @@ export async function runProvisionLifecycle(
     provisionState: "published",
     provisionError: null,
     publishedAt: new Date(),
+    ...(training ?? {}),
   });
 
-  return { ok: true, tenantId, connectorId, calls, warnings };
+  return { ok: true, tenantId, connectorId, calls, warnings, reactivated, training: trainingSummary };
 }
 
 /**
@@ -270,6 +331,8 @@ export async function provisionOnInstall(
           connectorId: null,
           calls: [],
           warnings: [`provisionOnInstall raced; tenant already provisioned: ${message}`],
+          reactivated: false,
+          training: null,
         };
       }
       await deps.saveTenant(session.shop, {
@@ -287,6 +350,8 @@ export async function provisionOnInstall(
       error: message,
       calls: [],
       warnings: [`provisionOnInstall threw: ${message}`],
+      reactivated: false,
+      training: null,
     };
   }
 }

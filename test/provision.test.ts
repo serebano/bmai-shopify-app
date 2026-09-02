@@ -326,3 +326,169 @@ describe("tenant provisioning lifecycle (seam)", () => {
     expect(seen["provision_partner_tenant"]).toMatchObject({ partner: "shopify", shop: session.shop });
   });
 });
+
+// --- Grounded knowledge at install + reinstall (#2110) ---------------------
+// The lifecycle trains the tenant on the store (products/policies/pages) in the
+// SAME publish that takes it live: provision → branding → embed origin →
+// connector → buildKnowledge → publish(knowledge_sources). A training failure
+// is persisted + surfaced (kbError) but never blocks the tenant going live.
+
+const KNOWLEDGE = {
+  sources: [
+    { key: "shopify:policies", label: "Store policies", kind: "reference" as const, content: "Refunds within 30 days." },
+    { key: "shopify:products", label: "Product catalog", kind: "fact" as const, content: "Board — 99.00 USD" },
+  ],
+  counts: { products: 1, policies: 1, pages: 0 },
+  fetched: { products: 1, policies: 1, pages: 0 },
+  totalChars: 40,
+  truncated: false,
+};
+
+describe("lifecycle — grounded knowledge + reinstall", () => {
+  it("builds the knowledge AFTER the connector and BEFORE publish, and publishes it as knowledge_sources", async () => {
+    const order: string[] = [];
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      order.push(name);
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1", created: true } };
+      if (name === "upsert_tenant_support_connector") return { ok: true, data: { id: "c_1" } };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { revision: 3, knowledge_source_ids: ["k1", "k2"] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    deps.buildKnowledge = async (shop) => {
+      order.push(`buildKnowledge:${shop}`);
+      return KNOWLEDGE;
+    };
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(order).toEqual([
+      "provision_partner_tenant",
+      "set_tenant_branding",
+      "add_tenant_embed_origin",
+      "upsert_tenant_support_connector",
+      "buildKnowledge:acme.myshopify.com",
+      "publish_tenant_runtime",
+    ]);
+    // ONE publish, carrying origins + the compressed knowledge (never kb_snapshot).
+    expect(call.mock.calls.filter((c) => c[0] === "publish_tenant_runtime")).toHaveLength(1);
+    expect(seen["publish_tenant_runtime"].knowledge_sources).toEqual(KNOWLEDGE.sources);
+    expect(seen["publish_tenant_runtime"]).not.toHaveProperty("kb_snapshot");
+    expect(seen["publish_tenant_runtime"].launch_origins).toContain(servingHost("shop-acme"));
+    // Training state persisted with the published state.
+    const last = states.at(-1)!;
+    expect(last.provisionState).toBe("published");
+    expect(last.kbProducts).toBe(1);
+    expect(last.kbPolicies).toBe(1);
+    expect(last.kbPages).toBe(0);
+    expect(last.kbTrainedAt).toBeInstanceOf(Date);
+    expect(last.kbError).toBeNull();
+    expect(out.training).toMatchObject({ ok: true, counts: KNOWLEDGE.counts });
+    expect(out.reactivated).toBe(false);
+  });
+
+  it("a knowledge build failure is persisted as kbError + warned, and the tenant STILL goes live without knowledge", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    deps.buildKnowledge = async () => {
+      throw new Error("Shopify Admin 403");
+    };
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(seen["publish_tenant_runtime"]).not.toHaveProperty("knowledge_sources");
+    expect(out.warnings.some((w) => /knowledge: Shopify Admin 403/.test(w))).toBe(true);
+    const last = states.at(-1)!;
+    expect(last.provisionState).toBe("published");
+    expect(last.kbError).toMatch(/Shopify Admin 403/);
+    expect(last).not.toHaveProperty("kbTrainedAt");
+    expect(out.training).toMatchObject({ ok: false, error: expect.stringMatching(/403/) });
+  });
+
+  it("a knowledge_sources rejection at the edge re-publishes WITHOUT knowledge (tenant live) and persists the rejection", async () => {
+    const publishes: Record<string, unknown>[] = [];
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "publish_tenant_runtime") {
+        publishes.push(args ?? {});
+        if (args && "knowledge_sources" in args) return { ok: false, error: "knowledge_sources total content exceeds 40,000 characters (40001)" };
+        return { ok: true, data: { revision: 4 } };
+      }
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    deps.buildKnowledge = async () => KNOWLEDGE;
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(publishes).toHaveLength(2);
+    expect(publishes[0]).toHaveProperty("knowledge_sources");
+    expect(publishes[1]).not.toHaveProperty("knowledge_sources");
+    expect(states.at(-1)!.provisionState).toBe("published");
+    expect(states.at(-1)!.kbError).toMatch(/exceeds 40,000/);
+  });
+
+  it("a NON-knowledge publish failure is NOT retried and fails closed as before", async () => {
+    const call = vi.fn(async (name: string) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "publish_tenant_runtime") return { ok: false, error: "proof-of-shop verification failed" };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    deps.buildKnowledge = async () => KNOWLEDGE;
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(false);
+    expect(call.mock.calls.filter((c) => c[0] === "publish_tenant_runtime")).toHaveLength(1);
+    expect(states.at(-1)!.provisionState).toBe("error");
+  });
+
+  it("REINSTALL: provision_partner_tenant reactivated:true → re-published, state published (Home 'Live'), reactivated reported", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_old", created: false, reactivated: true } };
+      return { ok: true };
+    });
+    const states: TenantPatch[] = [];
+    const deps: ProvisionDeps = {
+      call: call as unknown as ProvisionDeps["call"],
+      // The app row is still there from before the uninstall (suspended).
+      getTenant: async () => ({ bmaiTenantId: "t_old", customDomain: null, connectorId: "c_old", provisionState: "suspended" }),
+      saveTenant: async (_shop, patch) => {
+        states.push(patch);
+      },
+      connectorEndpoint: () => "https://store.busymate.ai/mcp",
+      embedOrigin: "https://busymate.ai",
+      signProof: () => STUB_PROOF,
+      delegationReady: false,
+      buildKnowledge: async () => KNOWLEDGE,
+    };
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.reactivated).toBe(true);
+    expect(out.tenantId).toBe("t_old");
+    expect(out.calls.at(-1)).toBe("publish_tenant_runtime");
+    expect(seen["publish_tenant_runtime"]).toMatchObject({ tenant_id: "t_old", confirm: true });
+    expect(seen["publish_tenant_runtime"].knowledge_sources).toEqual(KNOWLEDGE.sources);
+    expect(states.at(-1)).toMatchObject({ provisionState: "published", bmaiTenantId: "t_old", provisionError: null, kbProducts: 1 });
+  });
+
+  it("without a buildKnowledge dep (ops verify script) the lifecycle publishes with no knowledge and records no training", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(seen["publish_tenant_runtime"]).not.toHaveProperty("knowledge_sources");
+    expect(states.at(-1)).not.toHaveProperty("kbTrainedAt");
+    expect(out.training).toBeNull();
+  });
+});

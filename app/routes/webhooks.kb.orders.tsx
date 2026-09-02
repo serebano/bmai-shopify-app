@@ -2,12 +2,13 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import { scheduleReingest } from "../lib/ingest";
 
-// Order/fulfillment changes don't feed the KB directly (order reads are live via
-// the connector), but a cancellation/refund may invalidate a cached WISMO answer;
-// keep the hook so policy/threshold changes can re-train.
+// Order/fulfillment changes are NOT knowledge — a shopper's orders are read live
+// through the store connection — so this hook never re-trains (the scheduler
+// refuses the "orders" reason). Kept as the subscription target so the topic can
+// be re-enabled once Protected Customer Data access is granted.
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop, topic } = await authenticate.webhook(request);
-  console.log(`[kb] ${topic} for ${shop}`);
-  await scheduleReingest(shop, "orders");
+  const r = scheduleReingest(shop, "orders");
+  console.log(`[kb] ${topic} for ${shop} → ${r.scheduled ? "re-train queued" : `no re-train (${r.reason})`}`);
   return new Response();
 };

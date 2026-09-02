@@ -1,4 +1,5 @@
 import { proofArgs, type PartnerProof } from "./partnerProof";
+import type { KnowledgeSource } from "./kbSnapshot";
 
 /**
  * Shared argument builders for the bmai tenant-MANAGEMENT tools
@@ -28,10 +29,18 @@ export function brandingArgs(
 export interface PublishOptions {
   launchOrigins?: string[];
   embedOrigins?: string[];
-  kbSnapshot?: unknown;
+  /**
+   * The store's compressed knowledge (app/lib/kbSnapshot.ts) — the platform's ONE
+   * tenant-knowledge write path (`knowledge_sources`: replace-by-key, ≤40 sources,
+   * ≤20,000 chars each, ≤40,000 total). An empty list is OMITTED (the edge rejects
+   * an empty array; an empty store simply publishes without knowledge).
+   * NOTE: the former `kb_snapshot` arg was not in the edge's input schema and was
+   * silently ignored — never emit it.
+   */
+  knowledgeSources?: KnowledgeSource[];
 }
 
-/** `publish_tenant_runtime` — proof-of-shop + confirm, with optional origins/KB. */
+/** `publish_tenant_runtime` — proof-of-shop + confirm, with optional origins/knowledge. */
 export function publishArgs(
   proof: PartnerProof | null,
   tenantId: string | null | undefined,
@@ -42,7 +51,7 @@ export function publishArgs(
     tenant_id: tenantId,
     ...(opts.launchOrigins ? { launch_origins: opts.launchOrigins } : {}),
     ...(opts.embedOrigins ? { embed_origins: opts.embedOrigins } : {}),
-    ...(opts.kbSnapshot !== undefined ? { kb_snapshot: opts.kbSnapshot } : {}),
+    ...(opts.knowledgeSources && opts.knowledgeSources.length ? { knowledge_sources: opts.knowledgeSources } : {}),
     confirm: true,
   };
 }

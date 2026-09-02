@@ -45,6 +45,18 @@ model ShopTenant {
   provisionError String?
   customDomain   String?  // storefront custom domain, added to the embed-origin allowlist
   publishedAt    DateTime?
+  /// Training state (#2110 grounding): what the assistant was last trained on via
+  /// publish_tenant_runtime.knowledge_sources (app/lib/kbTrain.ts). Counts are the
+  /// items INCLUDED; *Total = items the store has (truncated when smaller).
+  kbTrainedAt     DateTime?
+  kbError         String?
+  kbProducts      Int?
+  kbPolicies      Int?
+  kbPages         Int?
+  kbChars         Int?
+  kbTruncated     Boolean?
+  kbProductsTotal Int?
+  kbPagesTotal    Int?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

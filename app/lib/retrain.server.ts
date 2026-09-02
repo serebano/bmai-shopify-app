@@ -1,20 +1,19 @@
 import prisma from "../db.server";
-import { scheduleReingest } from "./ingest";
+import { retrainNow } from "./ingest";
 
 /**
- * Re-train hook for the "Store connection" page + the Home checklist.
- *
- * CONTRACT with the knowledge-base lane (which owns app/lib/ingest.ts +
- * prisma/**): the ingest implementation fills the optional ShopTenant training
- * fields read here — `kbTrainedAt` (DateTime?), `kbError` (String?),
- * `kbProducts` / `kbPages` / `kbPolicies` (Int?). Until those columns exist this
- * module reads them defensively (undefined ⇒ "not trained yet") and `runRetrain`
- * reports the ingest call's outcome — never a fabricated "trained" state.
+ * Training state for the "Store connection" page + the Home checklist, read off
+ * the ShopTenant kb* columns (prisma/schema.prisma), and the "Re-train on my
+ * store" action, which runs the ingest synchronously and reports the resulting
+ * state — never a fabricated "trained".
  */
 export interface TrainingState {
   trainedAt: string | null;
   error: string | null;
   counts: { products: number | null; pages: number | null; policies: number | null };
+  fetched: { products: number | null; pages: number | null };
+  truncated: boolean;
+  chars: number | null;
 }
 
 type MaybeTrained = {
@@ -23,9 +22,13 @@ type MaybeTrained = {
   kbProducts?: number | null;
   kbPages?: number | null;
   kbPolicies?: number | null;
+  kbChars?: number | null;
+  kbTruncated?: boolean | null;
+  kbProductsTotal?: number | null;
+  kbPagesTotal?: number | null;
 };
 
-/** Read the optional training fields off a ShopTenant row (defensive). */
+/** Read the training fields off a ShopTenant row (defensive: null row = never trained). */
 export function readTrainingState(tenant: unknown): TrainingState {
   const t = (tenant ?? {}) as MaybeTrained;
   const at = t.kbTrainedAt instanceof Date ? t.kbTrainedAt.toISOString() : typeof t.kbTrainedAt === "string" ? t.kbTrainedAt : null;
@@ -34,6 +37,9 @@ export function readTrainingState(tenant: unknown): TrainingState {
     trainedAt: at,
     error: typeof t.kbError === "string" && t.kbError ? t.kbError : null,
     counts: { products: num(t.kbProducts), pages: num(t.kbPages), policies: num(t.kbPolicies) },
+    fetched: { products: num(t.kbProductsTotal), pages: num(t.kbPagesTotal) },
+    truncated: t.kbTruncated === true,
+    chars: num(t.kbChars),
   };
 }
 
@@ -43,22 +49,13 @@ export interface RetrainResult {
   state: TrainingState;
 }
 
-/**
- * Re-run the store's knowledge-base ingest + runtime publish, then report the
- * resulting training state. A thrown ingest error is returned, not swallowed.
- */
+/** Re-run the store's knowledge ingest + runtime publish NOW, then report the persisted state. */
 export async function runRetrain(shop: string): Promise<RetrainResult> {
   const before = await prisma.shopTenant.findUnique({ where: { shop } });
   if (!before?.bmaiTenantId) {
     return { ok: false, error: "no provisioned tenant for this shop yet", state: readTrainingState(before) };
   }
-  try {
-    await scheduleReingest(shop, "products");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message, state: readTrainingState(before) };
-  }
+  const out = await retrainNow(shop);
   const after = await prisma.shopTenant.findUnique({ where: { shop } });
-  const state = readTrainingState(after);
-  return { ok: !state.error, error: state.error ?? undefined, state };
+  return { ok: out.ok, error: out.error, state: readTrainingState(after) };
 }

@@ -18,7 +18,9 @@ embedded = true
 [access_scopes]
 # Least-privilege. read_all_orders (>60-day orders) needs Shopify approval and is
 # requested separately at review time, not here.
-scopes = "read_products,read_content,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
+# read_legal_policies: the assistant is trained on the store's policies
+# (Shop.shopPolicies — app/lib/kbFetch.ts); read_content covers pages.
+scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
 
 [auth]
 redirect_urls = [

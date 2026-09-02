@@ -49,3 +49,22 @@ describe("shopify.app.toml [app_proxy]", () => {
     expect(existsSync(join(root, "app/routes/identity.tsx"))).toBe(true);
   });
 });
+
+/**
+ * Grounding (#2110): the training query (app/lib/kbFetch.ts) reads products,
+ * pages (read_content) and Shop.shopPolicies — which Shopify gates behind
+ * `read_legal_policies`. A missing scope makes the WHOLE ingest fail with
+ * "Access denied", so the toml scopes are pinned to what the query needs.
+ */
+describe("shopify.app.toml [access_scopes] cover the training query", () => {
+  const scopes = tomlValue(tomlSection("access_scopes"), "scopes").split(",").map((s) => s.trim());
+  it.each([
+    ["products", "read_products"],
+    ["pages", "read_content"],
+    ["shopPolicies", "read_legal_policies"],
+  ])("KB_INGEST_QUERY reads %s → scope %s is requested", async (field, scope) => {
+    const { KB_INGEST_QUERY } = await import("../app/lib/kbFetch");
+    expect(KB_INGEST_QUERY).toContain(field);
+    expect(scopes).toContain(scope);
+  });
+});
