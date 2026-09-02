@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import {
   Badge,
   BlockStack,
@@ -22,6 +22,14 @@ import { readTrainingState, runRetrain } from "../lib/retrain.server";
 import { trainingSummary } from "../lib/themeEmbed";
 import { runConnectorAction } from "../lib/connectorAction.server";
 import { LocalTime } from "../components/LocalTime";
+import { failClosedClientAction, isTransportFailure } from "../lib/clientAction";
+import { AppRouteBoundary } from "../components/AppRouteError";
+
+// Embedded-frame contract (#retrain-500): a failed action FETCH (network blip,
+// app restarting) renders an error toast + revalidates — never the root 500
+// page — and a route error recovers in-frame.
+export const clientAction = failClosedClientAction;
+export const ErrorBoundary = AppRouteBoundary;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -80,14 +88,19 @@ export default function ConnectorPage() {
   const [showTech, setShowTech] = useState(false);
   const busy = (intent: string) => fetcher.state !== "idle" && fetcher.formData?.get("intent") === intent;
 
+  const { revalidate } = useRevalidator();
+
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
       const d = fetcher.data;
       if (d.intent === "retrain")
         shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : `Re-train failed: ${d.error ?? "unknown"}`, { isError: !d.ok });
       if (d.intent === "reprovision") shopify.toast.show(d.ok ? "Store connection is live" : `Still not live: ${d.error ?? d.state}`, { isError: !d.ok });
+      // The REQUEST failed (network blip / app restart) — the server may still have
+      // finished the work, so refresh the loader to show the real state (#retrain-500).
+      if (isTransportFailure(d)) revalidate();
     }
-  }, [fetcher.state, fetcher.data, shopify]);
+  }, [fetcher.state, fetcher.data, shopify, revalidate]);
 
   const connected = Boolean(data.connectorId) && data.provisionState === "published";
   return (

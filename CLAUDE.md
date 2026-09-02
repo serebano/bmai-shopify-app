@@ -73,6 +73,14 @@ CHECKLIST.md                Built-for-Shopify compliance status
   and is shown on Home / Store connection; ingest errors are persisted, never swallowed.
 - **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"bro"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
+- **Embedded-frame contract** — nothing may paint the root "500" document inside the admin
+  iframe. Every `app/routes/app.*.tsx` child route exports `ErrorBoundary = AppRouteBoundary`
+  (in-frame recovery with Try again) and, when it has an `action`,
+  `clientAction = failClosedClientAction` (a rejected action fetch — network blip, 502 while
+  restarting — resolves to `{ ok:false, error, transport:true }` and renders as an error toast).
+  Server actions fail closed too (`connectorAction.server.ts`); SSR timestamps go through
+  `<LocalTime>` / `formatServerTime` (deterministic → clean hydration). Enforced by
+  `test/clientAction.test.ts` (wiring derived from the live route files) + `test/formatTime.test.ts`.
 - **Every change ships a test** — `test/**`, `npm test`. Assert the denied/failure path too.
 
 ## Commands

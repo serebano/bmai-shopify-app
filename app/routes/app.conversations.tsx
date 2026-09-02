@@ -18,6 +18,11 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { listTenantConversations, listTenantHandoffs } from "../lib/tenantRead.server";
 import { LocalTime } from "../components/LocalTime";
+import { AppRouteBoundary } from "../components/AppRouteError";
+
+// Embedded-frame contract (#retrain-500): a route error recovers in-frame, never
+// the root 500 page.
+export const ErrorBoundary = AppRouteBoundary;
 
 /** The Busymate AI inbox (auth-gated) where the merchant reads full transcripts. */
 export const INBOX_URL = "https://busymate.ai/console/inbox";
