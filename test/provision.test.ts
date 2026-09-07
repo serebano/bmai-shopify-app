@@ -146,6 +146,23 @@ describe("tenant provisioning lifecycle (seam)", () => {
     expect(args.tool_access.start_return).toBeUndefined();
   });
 
+  it("#2482 registers a non-empty title AND description (an empty description broke the shared registry export)", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    await runProvisionLifecycle(session, deps);
+
+    const connectorCall = call.mock.calls.find((c) => c[0] === "upsert_tenant_support_connector");
+    expect(connectorCall).toBeDefined();
+    const args = connectorCall![1] as unknown as { title?: unknown; description?: unknown };
+    expect(typeof args.title).toBe("string");
+    expect((args.title as string).trim().length).toBeGreaterThan(0);
+    expect(typeof args.description).toBe("string");
+    expect((args.description as string).trim().length).toBeGreaterThan(0);
+  });
+
   it("flips to signed_actor_token + registers the delegated writes when the verifier is ready", async () => {
     const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
       if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };

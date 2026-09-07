@@ -257,6 +257,11 @@ export async function runProvisionLifecycle(
     endpoint: deps.connectorEndpoint(),
     namespace: "shopify-admin",
     title: "Shopify Admin",
+    // #2482 — description is REQUIRED by the platform (bmai #2482): an empty
+    // value here (this call never set one) broke the shared registry
+    // export's own schema once the connector was projected. Fixed at the
+    // source rather than only downstream.
+    description: "Shop order tools — order status, tracking, and (when delegated) refunds, returns, cancellations, address updates, discounts, and draft orders.",
     auth_mode: "none",
     delegation_mode: delegationMode,
     tool_access: connectorToolAccess(deps.delegationReady),
