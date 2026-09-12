@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runProvisionLifecycle, type ProvisionDeps, type TenantPatch } from "../app/lib/provision";
+import { runProvisionLifecycle, runtimeOrigins, type ProvisionDeps, type TenantPatch } from "../app/lib/provision";
 
 /** Regression for the Sep 11 review: connector rejection must never look published. */
 describe("fresh install with delegated customer tools", () => {
@@ -56,5 +56,18 @@ describe("fresh install with delegated customer tools", () => {
       expect(out.warnings).toEqual([]);
       expect(states.at(-1)?.provisionWarning).toBeNull();
     }
+  });
+});
+
+
+describe("Shopify theme editor ancestor chain", () => {
+  it("allows the store and both Shopify editor ancestors without widening launch origins", () => {
+    const origins = runtimeOrigins("review.myshopify.com", "shop-review", "shop.example.com");
+    expect(origins.embedOrigins).toEqual([
+      "https://review.myshopify.com", "https://shop.example.com",
+      "https://admin.shopify.com", "https://online-store-web.shopifyapps.com",
+    ]);
+    expect(origins.launchOrigins).toEqual(["https://shop-review.busymate.ai"]);
+    expect(origins.embedOrigins.some(origin => origin.includes("*"))).toBe(false);
   });
 });
