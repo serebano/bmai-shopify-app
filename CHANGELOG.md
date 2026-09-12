@@ -4,7 +4,7 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
-## Unreleased — refuse invalid resolution batches
+## 2026-09-12 — 0.1.6: refuse invalid resolution batches
 
 - Hold the stored cursor and send no billing event for invalid resolution counts,
   empty/non-string cursors, or a positive batch repeating the stored cursor.
