@@ -73,7 +73,10 @@ export type TenantPatch = {
 export function runtimeOrigins(shop: string, slug: string, customDomain?: string | null): { launchOrigins: string[]; embedOrigins: string[] } {
   return {
     launchOrigins: [servingHost(slug)],
-    embedOrigins: [`https://${shop}`, ...(customDomain ? [`https://${customDomain}`] : [])],
+    // CSP frame-ancestors checks EVERY ancestor. Theme preview nests the store
+    // inside Shopify's editor iframe and admin; allow those exact hosts, never *.
+    embedOrigins: [`https://${shop}`, ...(customDomain ? [`https://${customDomain}`] : []),
+      "https://admin.shopify.com", "https://online-store-web.shopifyapps.com"],
   };
 }
 

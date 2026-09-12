@@ -9,6 +9,10 @@ new AI stack. It is also an **open reference** for connecting any platform to Bu
 This file orients humans and AI coding assistants working in this repo. Contributor
 workflow lives in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+Reusable Codex guidance for this integration lives in
+[`shopify-specialist`](.agents/skills/shopify-specialist/SKILL.md) (`$shopify-specialist`):
+project contracts, browser diagnostics, delivery checks, and App Store review preparation.
+
 ## The one hard invariant — all-ops-via-MCP
 
 This app reaches Busymate AI **only** through official contracts: the Busymate AI **MCP

@@ -4,6 +4,13 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.2: chat inside Shopify's theme editor (#16)
+
+- Publish the two exact Shopify editor ancestors alongside the store origin so
+  the chat iframe works inside the nested theme preview. No wildcard origins;
+  launch origins remain scoped to the assistant host.
+- Install/retry and retraining share the same origin builder.
+
 ## 2026-09-12 — 0.1.1: Shopify review fixes (#16)
 
 - Theme activation now uses the installed app's client ID, as required by Shopify's
