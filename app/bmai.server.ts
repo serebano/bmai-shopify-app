@@ -101,6 +101,8 @@ export async function callMcpTool<T = unknown>(
   const doFetch = (bearer: string) =>
     fetch(MCP_URL, {
       method: "POST",
+      // A status read must not hold an embedded admin request indefinitely.
+      signal: name === "get_tenant_integration" ? AbortSignal.timeout(8000) : undefined,
       headers: { "content-type": "application/json", authorization: `Bearer ${bearer}` },
       body: JSON.stringify({
         jsonrpc: "2.0",

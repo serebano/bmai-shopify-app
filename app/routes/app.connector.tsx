@@ -16,7 +16,8 @@ import {
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { onAppInstalled } from "../bmai.server";
+import { callMcpTool, onAppInstalled } from "../bmai.server";
+import { readRuntimeReadiness } from "../lib/runtimeReadiness";
 import { connectorEndpoint } from "../lib/connector";
 import { readTrainingState, runRetrain } from "../lib/retrain.server";
 import { trainingSummary } from "../lib/themeEmbed";
@@ -35,7 +36,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
   const training = readTrainingState(tenant);
+  const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
+    ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
   return {
+    runtime,
     endpoint: connectorEndpoint(),
     connectorId: tenant?.connectorId ?? null,
     tenantId: tenant?.bmaiTenantId ?? null,
@@ -61,10 +65,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // retryable here rather than stuck.
       await onAppInstalled(session);
       const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
+      const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
+        ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
       return {
-        ok: tenant?.provisionState === "published",
-        state: tenant?.provisionState ?? "pending",
-        error: tenant?.provisionError ?? null,
+        ok: runtime?.state === "ready" && !tenant?.provisionWarning,
+        state: runtime?.state ?? tenant?.provisionState ?? "pending",
+        error: tenant?.provisionError ?? tenant?.provisionWarning ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null,
       };
     },
     retrain: async () => {
@@ -103,7 +109,7 @@ export default function ConnectorPage() {
     }
   }, [fetcher.state, fetcher.data, shopify, revalidate]);
 
-  const connected = Boolean(data.connectorId) && data.provisionState === "published" && !data.provisionWarning;
+  const connected = Boolean(data.connectorId) && data.runtime?.state === "ready" && !data.provisionWarning;
   return (
     <Page>
       <TitleBar title="Store connection" />
@@ -141,6 +147,9 @@ export default function ConnectorPage() {
                   <Text as="p" tone="caution">
                     {data.provisionWarning}
                   </Text>
+                ) : null}
+                {data.runtime && data.runtime.state !== "ready" ? (
+                  <Text as="p" tone="caution">{data.runtime.detail}</Text>
                 ) : null}
                 <InlineStack gap="300">
                   <fetcher.Form method="post">

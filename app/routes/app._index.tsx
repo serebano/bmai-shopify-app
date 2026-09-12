@@ -19,7 +19,8 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
-import { onAppInstalled } from "../bmai.server";
+import { callMcpTool, onAppInstalled } from "../bmai.server";
+import { readRuntimeReadiness } from "../lib/runtimeReadiness";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { planFor } from "../lib/plans";
@@ -53,9 +54,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // password-protected store — the written steps cover that case).
   const embed = await detectStorefrontEmbed(shop);
   const provisionState = tenant?.provisionState ?? "pending";
+  const runtime = provisionState === "published" && tenant?.bmaiTenantId
+    ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
+  const live = runtime?.state === "ready";
   const steps = buildSetupChecklist({
     provisionState,
-    connectorReady: Boolean(tenant?.connectorId),
+    connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
     embed,
     trainedAt: training.trainedAt,
     trainError: training.error,
@@ -66,14 +70,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     hasSubscription: tenant?.billing?.status === "active" || tenant?.billing?.status === "pending",
     planSelected: access.planSelected,
   });
+  if (provisionState === "published" && !live) {
+    const step = steps.find(s => s.id === "provisioned")!;
+    step.done = false;
+    step.failed = runtime?.state === "error";
+    step.detail = runtime?.detail ?? "Your assistant's live status could not be verified.";
+  }
   return {
     shop,
     planSelected: access.planSelected,
     servingHost: `${slug}.busymate.ai`,
-    provisionState,
+    provisionState: provisionState === "published" ? (live ? "published" : `runtime-${runtime?.state ?? "unverified"}`) : provisionState,
     provisionError: tenant?.provisionError ?? null,
     provisionWarning: tenant?.provisionWarning ?? null,
-    connectorReady: Boolean(tenant?.connectorId),
+    connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
     training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
     embed,
     steps,
@@ -82,7 +92,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     activateUrl: themeEditorActivateUrl(shop),
     appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
     planName: planFor(access.planId).name,
-    live: provisionState === "published",
+    live,
   };
 };
 
@@ -94,11 +104,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await onAppInstalled(session);
   }
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-  return { ok: tenant?.provisionState === "published", state: tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? null };
+  const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
+    ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
+  return { ok: runtime?.state === "ready", state: runtime?.state ?? tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null };
 };
 
 function stateBadge(state: string) {
   if (state === "published") return <Badge tone="success">Live</Badge>;
+  if (state === "runtime-pending") return <Badge tone="attention">Activating</Badge>;
+  if (state === "runtime-unverified") return <Badge tone="warning">Status unavailable</Badge>;
+  if (state === "runtime-error") return <Badge tone="critical">Activation failed</Badge>;
   if (state === "error") return <Badge tone="critical">Needs attention</Badge>;
   if (state === "suspended") return <Badge tone="warning">Suspended</Badge>;
   return <Badge tone="attention">Provisioning</Badge>;
@@ -233,6 +248,10 @@ export default function Index() {
                     Open assistant
                   </Button>
                 ) : null}
+                <retry.Form method="post">
+                  <input type="hidden" name="intent" value="refresh" />
+                  <Button submit loading={retry.state !== "idle"}>Refresh status</Button>
+                </retry.Form>
               </BlockStack>
             </Card>
             <Card>

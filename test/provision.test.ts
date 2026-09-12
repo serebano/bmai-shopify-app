@@ -53,6 +53,22 @@ function makeDeps(
 const session = { shop: "acme.myshopify.com", email: "owner@acme.com", accessToken: "off_tok" };
 
 describe("tenant provisioning lifecycle (seam)", () => {
+  it.each([true, false])("reuses registered IDs only for the same tenant: %s", async sameTenant => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      seen[name] = args;
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: sameTenant ? "old" : "new" } };
+      // Missing returned IDs exercise safe fallback as well as update arguments.
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    deps.getTenant = async () => ({ bmaiTenantId: "old", connectorId: "old-connector", identityProviderId: "old-provider" });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(seen.upsert_tenant_support_connector.connector_id).toBe(sameTenant ? "old-connector" : undefined);
+    expect(seen.upsert_tenant_identity_provider.provider_id).toBe(sameTenant ? "old-provider" : undefined);
+    expect(out.connectorId).toBe(sameTenant ? "old-connector" : null);
+    expect(out.identityProviderId).toBe(sameTenant ? "old-provider" : null);
+  });
   it("runs the full lifecycle in order and publishes on success", async () => {
     const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
       if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_123" } };

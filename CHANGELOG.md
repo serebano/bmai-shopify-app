@@ -4,6 +4,16 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.3: verify activation and reconnect existing tenants
+
+- Home and Store connection verify the tenant's current published revision is
+  applied and ready before claiming Live/Connected. Pending, failed, and
+  unavailable observations remain distinct and can be refreshed.
+- Reconnection updates the existing connector, and only reuses connector/provider
+  IDs when the provisioned tenant is unchanged.
+- Missing or failed resolution measurements display unavailable rather than zero.
+- Host deployment, live verification, and review submission are recorded separately.
+
 ## 2026-09-12 — 0.1.2: chat inside Shopify's theme editor (#16)
 
 - Publish the two exact Shopify editor ancestors alongside the store origin so

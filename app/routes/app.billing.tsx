@@ -23,7 +23,7 @@ import { subscriptionStateFromInstallation, subscriptionStateFromPlanHandle } fr
 import { readBillingState, syncBillingState } from "../lib/billingState.server";
 import { appGidFromEnv, fetchActiveSubscription, subscriptionStateFromPartnerApi } from "../lib/partnerApi";
 import { meterShop } from "../lib/usageBilling";
-import { parseMeterCursor } from "../lib/meterCursor";
+import { measuredCycleResolutions } from "../lib/usageDisplay";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
@@ -104,7 +104,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const billing = await readBillingState(session.shop);
   const access = resolveBillingAccess({ status: billing?.status, plan: billing?.plan, shop: session.shop, appHandle: APP_HANDLE });
   const plan = planFor(access.planId);
-  const cursor = parseMeterCursor(billing?.lastMeteredCursor);
   return {
     plans: PLANS.map((p) => ({ id: p.id, name: p.name, blurb: describePlan(p), current: p.id === access.planId })),
     planId: access.planId,
@@ -121,7 +120,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     trialEndsAt: r.trialEndsAt,
     usage: {
       included: plan.includedResolutions,
-      cycleResolutions: cursor.cycleResolutions,
+      cycleResolutions: measuredCycleResolutions(billing?.lastMeteredCursor, meter.error),
       reportedUnits: r.usageQuantity,
       capped: meter.capped,
       meterError: meter.error ?? null,
@@ -212,7 +211,9 @@ export default function BillingPage() {
                   ) : null}
                 </Text>
                 <Text as="p" tone="subdued">
-                  This billing cycle: {data.usage.cycleResolutions} of {data.usage.included} included resolutions used
+                  {data.usage.cycleResolutions === null
+                    ? `Resolution usage is currently unavailable. Your plan includes ${data.usage.included} resolutions per billing cycle`
+                    : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
                   {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
                   {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}.
                 </Text>
