@@ -212,6 +212,8 @@ export async function runProvisionLifecycle(
     return { ok: false, tenantId: null, connectorId: null, identityProviderId: null, error: provisioned.error, calls, warnings, reactivated: false, training: null };
   }
   const tenantId = provisioned.data?.tenant_id ?? existing?.bmaiTenantId ?? null;
+  // Registered IDs belong to a tenant, not merely to this Shopify shop.
+  const sameTenant = Boolean(tenantId && existing?.bmaiTenantId === tenantId);
   // REINSTALL: app/uninstalled archived the tenant (suspend_tenant); under a valid
   // proof provision_partner_tenant reactivates it (status active + runtime
   // re-projection) and says so. The publish below re-takes it live either way.
@@ -257,6 +259,7 @@ export async function runProvisionLifecycle(
   const connector = await soft<{ id?: string; connector?: { id?: string } }>("upsert_tenant_support_connector", {
     ...proofArgs(proof),
     tenant_id: tenantId,
+    ...(sameTenant && existing?.connectorId ? { connector_id: existing.connectorId } : {}),
     endpoint: deps.connectorEndpoint(),
     namespace: "shopify-admin",
     title: "Shopify Admin",
@@ -280,7 +283,7 @@ export async function runProvisionLifecycle(
   // so falling back to `null` would NULL a good connectorId and regress the app's
   // "connector registered" state on every re-auth. Fall back to the existing id.
   const connectorId =
-    connector.data?.id ?? connector.data?.connector?.id ?? existing?.connectorId ?? null;
+    connector.data?.id ?? connector.data?.connector?.id ?? (sameTenant ? existing?.connectorId : null) ?? null;
 
   // 5b) Register this host as the tenant's VISITOR IDENTITY PROVIDER (#2132 FAIL A).
   // The storefront widget fetches a launch JWT from /identity (App Proxy, HMAC-
@@ -290,7 +293,7 @@ export async function runProvisionLifecycle(
   // order tools could never be offered. `delegated_access` mirrors the connector's
   // delegation readiness. Idempotent: re-targets the persisted provider id.
   // Best-effort like the connector: a denial is recorded, the tenant still goes live.
-  let identityProviderId: string | null = existing?.identityProviderId ?? null;
+  let identityProviderId: string | null = (sameTenant ? existing?.identityProviderId : null) ?? null;
   if (deps.launchIdentity) {
     const provider = await soft<{ provider?: { id?: string }; id?: string }>(
       "upsert_tenant_identity_provider",

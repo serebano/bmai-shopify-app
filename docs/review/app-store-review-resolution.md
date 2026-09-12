@@ -1,7 +1,12 @@
 # App Store review — resolution record
 
-**Status: every reported requirement is resolved, tested and deployed to production
-(`https://store.busymate.ai`, app version `busymate-ai-5`).**
+**Historical record of the August review fixes, not current release certification.**
+The September 11 review and September 12 verification found additional provisioning,
+theme-preview, runtime-projection and resolution-metering gaps. Those findings supersede
+the earlier all-resolved assessment below. Current tracking:
+[review fixes #16](https://github.com/serebano/bmai-shopify-app/issues/16) and
+[resolution metering #19](https://github.com/serebano/bmai-shopify-app/issues/19).
+Resubmission remains pending until live verification is complete.
 
 Two reviews reached us: **Aug 29** (2.1.1 / 2.1.3 — the embedded app returned a web `500`
 on first load) and **Aug 31** (Shopify reference 132497 — **1.2.1** "changing plans inside
