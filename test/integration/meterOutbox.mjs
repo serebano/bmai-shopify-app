@@ -64,7 +64,7 @@ try {
     assert.equal((await db.billingState.findUnique({ where: { shop: b.shop } })).lastMeteredCursor, 'c0');
     assert.equal(await core.claim(b.shop), null);
   });
-  await check('tenant rebind or cycle cursor change refuses delivery before send', async () => {
+  await check('tenant rebind or cursor snapshot change refuses delivery before send', async () => {
     const b = await fixture(); await core.prepare(b);
     await db.shopTenant.update({ where: { shop: b.shop }, data: { bmaiTenantId: 'tenant-other' } });
     await assert.rejects(core.claim(b.shop), /snapshot changed/);

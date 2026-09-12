@@ -16,8 +16,11 @@ upstream cursor. The adapter must calculate them from the eligible ledger.
 
 The core checks required values, positive safe integer units, a paid plan, and that
 the occurrence range and timestamp fit one supplied cycle. It cannot independently
-verify the evidence reference or Shopify cycle: the adapter must do that before
-preparation. Never substitute processing time for ledger occurrence time. Mixed or
+verify the evidence reference, Shopify shop GID, or actual Shopify cycle: the
+adapter must establish those from trusted sources before preparation. Claiming
+compares stored tenant, plan, subscription and cursor snapshots; it does not fetch
+Shopify to revalidate a cycle transition or shop GID. The cursor-change test proves
+only a stored cursor mismatch, not detection of a live Shopify cycle rollover. Never substitute processing time for ledger occurrence time. Mixed or
 closed-cycle eligibility and changed subscription terms require explicit upstream
 handling; they are not inferred here.
 
@@ -27,7 +30,7 @@ retain authenticated shop authorization and canonical tenant ownership checks.
 ## Delivery state
 
 1. `prepare` locks the shop's billing and tenant rows. An existing pending batch
-   wins over any new reader result. Otherwise the before-cursor, active subscription,
+   wins over any new reader result. Otherwise the before-cursor, stored active subscription snapshot,
    plan and tenant must still match; the immutable batch is committed before any
    external request. A database trigger prevents payload/key identity changes.
 2. `claim` grants one 30-second lease using the database clock. A second worker
