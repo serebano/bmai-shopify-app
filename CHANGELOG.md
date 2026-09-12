@@ -4,6 +4,18 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.1: Shopify review fixes (#16)
+
+- Theme activation now uses the installed app's client ID, as required by Shopify's
+  current deep-link contract, rather than a CDN asset UUID. Asset detection stays
+  separate; missing app identity opens the manual App embeds panel.
+- Includes the connector-description fix from `f7665fb`, absent from the previous
+  host release. Without it, new assistants could not pass delegated-tool preflight.
+- Regression coverage exercises connector rejection through publish failure and
+  successful delegated connector registration through publication.
+- Local validation: 53 suites / 488 tests, typecheck, lint, production build passed.
+- Live verification and review submission are recorded separately after completion.
+
 ## 2026-09-02 — fix(#2132 C+D): branding save re-publishes the runtime; honest "No plan selected" billing state · `dc2e004` (PR #9) · host `store.busymate.ai` build 18:38Z
 
 Found by the busymate-devtools#2110 reviewer simulation on the fresh dev store

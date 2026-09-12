@@ -4,12 +4,10 @@
  * Theme editor → App embeds. This module owns the deep link + the setup
  * checklist Home renders, and a scope-free embed detector.
  *
- * THE UUID: `activateAppId` takes the extension UUID SHOPIFY ASSIGNED to the
- * deployed theme extension — the segment in the CDN asset path the storefront
- * loads (`https://cdn.shopify.com/extensions/<uuid>/<version>/assets/assistant.js`).
- * It is NOT the `uid` in shopify.extension.toml. Pinned here + in
- * test/themeEmbed.test.ts; overridable via STOREFRONT_ASSISTANT_EXTENSION_UUID
- * should the extension ever be re-created.
+ * Activation uses SHOPIFY_API_KEY (the app client_id), not a CDN asset UUID.
+ * Shopify deprecated extension UUID activation links. The CDN UUID below is
+ * ONLY for public storefront asset detection, never app activation.
+ * https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration
  *
  * LEAST PRIVILEGE: no `read_themes` scope. Embed status is detected from the
  * PUBLIC storefront HTML (does it load the extension asset?). A password-
@@ -28,10 +26,12 @@ export function extensionUuid(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** Theme editor with the app embed pre-activated (merchant still clicks Save). */
-export function themeEditorActivateUrl(shop: string, opts: { uuid?: string; block?: string } = {}): string {
-  const uuid = opts.uuid ?? extensionUuid();
+export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; block?: string } = {}): string {
+  const apiKey = (opts.apiKey ?? process.env.SHOPIFY_API_KEY ?? "").trim();
+  // Without app identity, open the manual app-embeds panel instead of a dead link.
+  if (!apiKey) return themeEditorAppEmbedsUrl(shop);
   const block = opts.block ?? STOREFRONT_ASSISTANT_BLOCK;
-  return `https://${shop}/admin/themes/current/editor?context=apps&activateAppId=${uuid}/${block}`;
+  return `${themeEditorAppEmbedsUrl(shop)}&activateAppId=${encodeURIComponent(apiKey)}/${encodeURIComponent(block)}`;
 }
 
 /** Theme editor → App embeds panel (fallback when the deep link is stale). */
