@@ -4,6 +4,14 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## Unreleased — prepared-batch delivery foundation
+
+- Add an internal, unwired immutable outbox with per-shop preparation, lease claims,
+  ingestion receipts and atomic matching-cursor advancement. Real PostgreSQL tests
+  cover concurrent workers and a failed cursor write after synthetic API acceptance.
+- No live billing integration, eligible ledger, pricing or Free allowance change.
+  See `docs/METER-OUTBOX.md` for the remaining integration contract.
+
 ## 2026-09-12 — 0.1.6: refuse invalid resolution batches
 
 - Hold the stored cursor and send no billing event for invalid resolution counts,

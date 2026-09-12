@@ -83,6 +83,7 @@ model BillingState {
   updatedAt            DateTime @updatedAt
 
   tenant ShopTenant @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  deliveries MeterDelivery[]
 }
 
 /// Singleton row holding the DURABLE bmai provisioning OAuth refresh credential.
@@ -104,4 +105,20 @@ model LaunchKey {
   publicJwk  String   // serialized public JWK, served at /.well-known/jwks.json
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
+}
+
+/// Unwired prepared-batch delivery core. accepted means ingestion, never billed.
+model MeterDelivery {
+  id          String @id
+  shop        String
+  payloadHash String
+  payload     Json
+  state       String @default("pending")
+  leaseToken  String?
+  leaseUntil  DateTime? @db.Timestamptz
+  acceptedAt  DateTime? @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  billing     BillingState @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  @@unique([shop, payloadHash])
+  // Partial unique pending-shop index is maintained in the SQL migration.
 }
