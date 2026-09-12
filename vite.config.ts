@@ -11,6 +11,10 @@ const hmrConfig =
     : { protocol: "wss", host, port: Number(process.env.FRONTEND_PORT) || 8002, clientPort: 443 };
 
 export default defineConfig({
+  // Shopify's boundary.error checks React Router ErrorResponse constructor names.
+  // Preserve them through client minification or token-recovery HTML turns into
+  // a root error during hydration (SSR itself succeeds).
+  esbuild: { keepNames: true },
   server: {
     allowedHosts: [host],
     port: Number(process.env.PORT) || 3000,

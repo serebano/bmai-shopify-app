@@ -4,6 +4,16 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.4: preserve embedded session recovery after navigation
+
+- Preserve constructor names during client minification. Shopify's session-token
+  response boundary identifies React Router errors by name; renaming the class
+  caused successful recovery responses to become a branded 200 error after hydration.
+- Reproduced on the production build in Chromium: reloading bare `/app` rendered
+  the error before this change, and retained recovery without browser errors after it.
+- Regression executes the installed Router and Shopify boundary through the real
+  minifier, including a negative control with names removed and unrelated errors.
+
 ## 2026-09-12 — 0.1.3: verify activation and reconnect existing tenants
 
 - Home and Store connection verify the tenant's current published revision is
