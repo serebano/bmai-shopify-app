@@ -4,7 +4,7 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
-## Unreleased — safe embedded-route diagnostics
+## 2026-09-12 — 0.1.7: safe embedded-route diagnostics
 
 - Log allowlisted authentication/route failure metadata without queries, credentials,
   messages, stacks, headers, request bodies or customer identity. SDK response
