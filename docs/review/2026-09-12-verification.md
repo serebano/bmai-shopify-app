@@ -10,6 +10,8 @@ This is a verification record, not Shopify approval. Resubmission is pending.
 - 0.1.4: preserve runtime class names during client minification so Shopify's authentication boundary recognizes React Router recovery responses. PR #21.
 - 0.1.5: internal navigation retains only verified shop, host and embedded routing context, removing authentication parameters. PR #22, deployed revision `c9f7c8ed03167cb2cc6cc70a318ffede21855d38`. CI passed 512 tests, typecheck, lint and production build.
 
+- 0.1.6: refuse invalid resolution counts, unusable cursors and positive batches repeating the stored cursor before reporting or saving. App Events rejects fractional/unsafe units rather than rounding them. PR #25, deployed revision `8f8748ff7a76bd786341299756a206426c59e991`. Local checks and CI passed 532 tests across 58 suites, typecheck, lint and production build. The new tests fail 15 assertions against the previous source.
+
 ## Observed live
 
 - The corrected activation link opens the intended app embed; the existing development-store embed is enabled.
@@ -18,10 +20,12 @@ This is a verification record, not Shopify approval. Resubmission is pending.
 - The official integration read works with the app's tenant-admin identity. The admin now displays Activating or Activation failed when projection has not completed; it no longer certifies that state as Live.
 - On 0.1.5, fresh Shopify app entry followed by Store connection navigation produced `/app/connector` with only `shop`, `host` and `embedded` query keys. Reloading that route restored the full Store connection page. The earlier branded HTTP-200 error and subsequent blank recovery page were absent. The separate activation failure remained visible as expected. Billing navigation and reload also restored the selected Free plan and explicit unavailable-usage state.
 
+- On 0.1.6, the rebuilt service started after the completed build; the public capability endpoint returned HTTP 200 with actor verification and launch identity available. The public root and four referenced JavaScript assets returned HTTP 200. Fresh embedded Home reload retained only `shop`, `host` and `embedded` routing parameters, and Billing navigation restored Free / Active with explicit unavailable usage. Reloading `/app/billing` with only those three routing keys also restored Free / Active and the explicit unavailable-usage state.
+
 ## Still blocking completion
 
 - Runtime projection: an old tenant removed from the authoritative system still owns the store slug in the serving database. The latest publication is rejected by the slug uniqueness constraint, so the older frame policy remains served. A tested reconciliation repair preserves old data and releases routing only after verifying authoritative ownership. Its platform release is not yet deployed.
-- Metering: the current usage API has no AI-resolution ledger or cursor. A customer-confirmed versus assistant-declared resolution definition is still needed before implementing and verifying charges and the Free allowance. Do not substitute messages, model steps, human handoff closures or fabricated zero usage.
+- Metering: the current usage API has no AI-resolution ledger or cursor. A customer-confirmed versus assistant-declared resolution definition is still needed before implementing and verifying charges and the Free allowance. The 0.1.6 defensive validation does not supply that ledger, serialized delivery, or the Free allowance. App Events acceptance alone is not proof that a charge was processed; Shopify billing logs must verify processing. Do not substitute messages, model steps, human handoff closures or fabricated zero usage.
 
 ## Review access
 
