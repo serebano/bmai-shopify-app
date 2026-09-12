@@ -1,5 +1,6 @@
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { Link as RouterLink } from "react-router";
+import { useEmbeddedAppUrl } from "./EmbeddedNavigation";
 
 /**
  * The Polaris `linkComponent` for the embedded admin (#2110).
@@ -29,9 +30,10 @@ export function isInternalAppPath(url: string, opts: { external?: boolean; targe
 }
 
 export function PolarisLink({ url, external, target, rel, children, ...rest }: PolarisLinkProps) {
+  const embeddedUrl = useEmbeddedAppUrl(url);
   if (isInternalAppPath(url, { external, target })) {
     return (
-      <RouterLink to={url} {...rest}>
+      <RouterLink to={embeddedUrl} {...rest}>
         {children}
       </RouterLink>
     );

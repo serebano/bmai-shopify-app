@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { PolarisLink, type PolarisLinkProps } from "../app/components/PolarisLink";
+import { EmbeddedNavigationContext } from "../app/components/EmbeddedNavigation";
+import { embeddedNavigationForShop } from "../app/lib/embeddedNavigation";
 
 /**
  * Embedded-app navigation (#2110, found live after the busymate-ai-5 release):
@@ -25,6 +27,14 @@ function render(props: PolarisLinkProps, basename = "/base") {
 }
 
 describe("PolarisLink (Polaris linkComponent)", () => {
+  it("renders reload-safe links from the authenticated app context", () => {
+    const html = renderToStaticMarkup(createElement(StaticRouter, { location: "/app" },
+      createElement(EmbeddedNavigationContext.Provider, { value: embeddedNavigationForShop("test.myshopify.com") },
+        createElement(PolarisLink, { url: "/app/billing" }, "billing"))));
+    expect(html).toContain("shop=test.myshopify.com");
+    expect(html).toContain("embedded=1");
+    expect(html).not.toContain("id_token");
+  });
   it("renders an internal app path through React Router (client-side navigation)", () => {
     const html = render({ url: "/app/connector" });
     // A React Router <Link> resolves against the router basename; a raw anchor would not.

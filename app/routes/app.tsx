@@ -8,33 +8,37 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticate } from "../shopify.server";
 import { PolarisLink } from "../components/PolarisLink";
+import { EmbeddedNavigationContext } from "../components/EmbeddedNavigation";
+import { embeddedAppUrl, embeddedNavigationForShop } from "../lib/embeddedNavigation";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  const { session } = await authenticate.admin(request);
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", navigation: embeddedNavigationForShop(session.shop) };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, navigation } = useLoaderData<typeof loader>();
   return (
     <AppProvider apiKey={apiKey}>
+      <EmbeddedNavigationContext.Provider value={navigation}>
       {/* linkComponent: Polaris <Link url>/<Button url> must stay client-side inside the
           admin iframe (app/components/PolarisLink.tsx) — a raw anchor reloads a bare URL
           the embedded auth cannot serve. */}
       <PolarisAppProvider i18n={enPolarisTranslations} linkComponent={PolarisLink}>
         <NavMenu>
-          <Link to="/app" rel="home">
+          <Link to={embeddedAppUrl("/app", navigation)} rel="home">
             Home
           </Link>
-          <Link to="/app/conversations">Conversations</Link>
-          <Link to="/app/settings">Assistant settings</Link>
-          <Link to="/app/connector">Store connection</Link>
-          <Link to="/app/billing">Billing</Link>
+          <Link to={embeddedAppUrl("/app/conversations", navigation)}>Conversations</Link>
+          <Link to={embeddedAppUrl("/app/settings", navigation)}>Assistant settings</Link>
+          <Link to={embeddedAppUrl("/app/connector", navigation)}>Store connection</Link>
+          <Link to={embeddedAppUrl("/app/billing", navigation)}>Billing</Link>
         </NavMenu>
         <Outlet />
       </PolarisAppProvider>
+      </EmbeddedNavigationContext.Provider>
     </AppProvider>
   );
 }

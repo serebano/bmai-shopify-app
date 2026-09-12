@@ -4,6 +4,16 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.5: keep session-recovery context across admin navigation
+
+- Internal navigation now carries the authenticated shop, its supported Shopify
+  admin host encoding, and embedded mode. Hard reloads enter the SDK's session-token
+  bounce instead of its contextless blank bootstrap response.
+- No session token is copied into links; Shopify still obtains and verifies a fresh
+  token. Both navigation menu and Polaris links use the shared context.
+- Regression exercises the installed SDK and verifies the recovery redirect and
+  return path. Live end-to-end recovery remains a separate release check.
+
 ## 2026-09-12 — 0.1.4: preserve embedded session recovery after navigation
 
 - Preserve constructor names during client minification. Shopify's session-token
