@@ -130,3 +130,30 @@ describe("meterShop (App Pricing usage events)", () => {
     expect(planFor("scale").overageCents).toBe(42);
   });
 });
+
+
+describe("resolution batch validation", () => {
+  it.each([NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, undefined, null, "3"])("holds invalid count %s without reporting or saving", async (resolutions) => {
+    const h = makeDeps();
+    h.deps.readResolutions = async () => ({ resolutions: resolutions as number, cursor: "c1" });
+    expect(await meterShop(SHOP, h.deps)).toMatchObject({ error: "invalid resolution batch — held", cursor: "c0", metered: 0 });
+    expect(h.reported).toEqual([]);
+    expect(h.saved).toEqual([]);
+  });
+
+  it.each(["", "   ", "c0", null, 123])("holds positive usage with unusable cursor %s", async (cursor) => {
+    const h = makeDeps({ resolutions: 500 });
+    h.deps.readResolutions = async () => ({ resolutions: 500, cursor: cursor as string });
+    expect((await meterShop(SHOP, h.deps)).error).toBe("invalid resolution batch — held");
+    expect(h.reported).toEqual([]);
+    expect(h.saved).toEqual([]);
+  });
+
+  it("accepts an empty batch at the current opaque cursor", async () => {
+    const h = makeDeps();
+    h.deps.readResolutions = async () => ({ resolutions: 0, cursor: "c0" });
+    expect(await meterShop(SHOP, h.deps)).toMatchObject({ cursor: "c0", metered: 0 });
+    expect(h.reported).toEqual([]);
+    expect(parseMeterCursor(h.saved[0]).cursor).toBe("c0");
+  });
+});
