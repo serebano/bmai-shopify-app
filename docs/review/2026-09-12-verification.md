@@ -16,7 +16,7 @@ This is a verification record, not Shopify approval. Resubmission is pending.
 - Free → Growth → Scale → Free test contracts return to the app with the expected plan. Shopify explicitly identifies these development-store contracts as free to test. The final observed plan is Free / Active.
 - Reconnect on 0.1.3 publishes refreshed knowledge without the earlier duplicate-connector warning.
 - The official integration read works with the app's tenant-admin identity. The admin now displays Activating or Activation failed when projection has not completed; it no longer certifies that state as Live.
-- On 0.1.5, fresh Shopify app entry followed by Store connection navigation produced `/app/connector` with only `shop`, `host` and `embedded` query keys. Reloading that route restored the full Store connection page. The earlier branded HTTP-200 error and subsequent blank recovery page were absent. The separate activation failure remained visible as expected.
+- On 0.1.5, fresh Shopify app entry followed by Store connection navigation produced `/app/connector` with only `shop`, `host` and `embedded` query keys. Reloading that route restored the full Store connection page. The earlier branded HTTP-200 error and subsequent blank recovery page were absent. The separate activation failure remained visible as expected. Billing navigation and reload also restored the selected Free plan and explicit unavailable-usage state.
 
 ## Still blocking completion
 
@@ -25,4 +25,4 @@ This is a verification record, not Shopify approval. Resubmission is pending.
 
 ## Review access
 
-No separate Busymate account is needed; Shopify authenticates the embedded app. The prepared instructions in `testing-instructions.md` explain review-store setup, theme activation and test billing. They have not yet been saved to the review form. Keep credentials and identifiable customer evidence out of this public repository.
+No separate Busymate account is needed; Shopify authenticates the embedded app. The instructions in `testing-instructions.md` explain review-store setup, theme activation and test billing. They were saved to Shopify's review form and verified after reloading the page (2,437 characters, no-separate-account option retained). This does not constitute resubmission. Keep credentials and identifiable customer evidence out of this public repository.
