@@ -1,7 +1,7 @@
 {
   "name": "bmai-shopify-app",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Busymate AI for Shopify — the official Shopify App Store app, and an open reference for connecting any platform to Busymate AI.",
   "license": "MIT",
   "type": "module",
@@ -50,6 +50,7 @@
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "esbuild": "^0.25.12",
     "eslint": "^9.17.0",
     "prisma": "^6.19.0",
     "tsx": "^4.23.13",
