@@ -30,3 +30,18 @@ This is a verification record, not Shopify approval. Resubmission is pending.
 ## Review access
 
 No separate Busymate account is needed; Shopify authenticates the embedded app. The instructions in `testing-instructions.md` explain review-store setup, theme activation and test billing. They were saved to Shopify's review form and verified after reloading the page (2,437 characters, no-separate-account option retained). This does not constitute resubmission. Keep credentials and identifiable customer evidence out of this public repository.
+
+## Idle navigation follow-up (unresolved)
+
+A later idle internal navigation rendered a 500. Fresh Shopify app entry recovered.
+Recent app logs showed offline-session exchanges and an aborted data request, but
+no underlying exception establishing a root cause. This observation is not closed
+by the earlier successful reload checks.
+
+The diagnostics patch for issue #29 preserves SDK status/headers and records only
+safe method, allowlisted static path, status, error class/code and abort state.
+It does not log messages, stacks, queries, headers, bodies or identities. An
+installed-SDK test with synthetic token-exchange responses demonstrates failure
+and successful retry without altering control flow; it is not a reproduction of
+the live root cause. Local validation: 541 tests, typecheck, lint and build passed.
+Deployment and renewed idle-navigation proof remain separate checks.

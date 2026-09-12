@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 import { onAppInstalled, onAppUninstalled } from "./bmai.server";
+import { observeAdminAuthentication } from "./lib/routeDiagnostics";
 import { encryptedSessionStorage } from "./lib/encryptedSessionStorage";
 
 // The pinned Admin API version (2026-07). Overridable by env for a dated dry-run;
@@ -59,7 +60,7 @@ const shopify = shopifyApp({
 export default shopify;
 export const apiVersion = API_VERSION;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
-export const authenticate = shopify.authenticate;
+export const authenticate = { ...shopify.authenticate, admin: observeAdminAuthentication(shopify.authenticate.admin) };
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const sessionStorage = shopify.sessionStorage;

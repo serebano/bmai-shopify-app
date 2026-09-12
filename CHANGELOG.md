@@ -4,6 +4,14 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-12 — 0.1.7: safe embedded-route diagnostics
+
+- Log allowlisted authentication/route failure metadata without queries, credentials,
+  messages, stacks, headers, request bodies or customer identity. SDK response
+  identity, status and recovery headers remain unchanged.
+- Installed-SDK regression covers a synthetic failed offline-token exchange and
+  successful retry. The unexplained idle-navigation 500 is not claimed fixed.
+
 ## 2026-09-12 — 0.1.6: refuse invalid resolution batches
 
 - Hold the stored cursor and send no billing event for invalid resolution counts,
