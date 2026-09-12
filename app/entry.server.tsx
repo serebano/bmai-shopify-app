@@ -4,6 +4,7 @@ import { ServerRouter } from "react-router";
 import type { EntryContext } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
+import { reportRouteFailure } from "./lib/routeDiagnostics";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
 export const streamTimeout = 5000;
@@ -39,11 +40,17 @@ export default async function handleRequest(
         onShellError(error: unknown) {
           reject(error);
         },
-        onError() {
+        onError(error: unknown) {
           responseStatusCode = 500;
+          reportRouteFailure("route_failed", request, error);
         },
       },
     );
     setTimeout(abort, streamTimeout + 1000);
   });
+}
+
+/** Router loader/action failures; preserve default response handling. */
+export function handleError(error: unknown, { request }: { request: Request }) {
+  reportRouteFailure("route_failed", request, error);
 }
