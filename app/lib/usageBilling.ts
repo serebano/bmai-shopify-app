@@ -20,7 +20,7 @@ export type { Plan };
  * billable overage — clamped to the plan's monthly cap — as ONE App Events
  * billing event (`ai_resolution`, value = units). App Pricing has no usage-cap
  * concept, so the cap is enforced here by not reporting beyond it. The cursor
- * (+ cycle counter) advances idempotently only once the batch is accounted for.
+ * (+ cycle counter) advances after a successful report or a nonbillable batch.
  *
  * The cap is a ceiling on CHARGES, never on the assistant — the widget is NEVER
  * disabled (`widgetEnabled()` is unconditional).
@@ -39,7 +39,7 @@ export interface MeterDeps {
   readBillingCycle: (shop: string) => Promise<{ key: string; shopId: string } | null>;
   /** Report billable units as an App Events billing event. */
   reportUsage: (input: { shop: string; shopId: string; units: number; idempotencyKey: string }) => Promise<{ ok: boolean; error?: string }>;
-  /** Persist the advanced (idempotent) serialized cursor. */
+  /** Persist the advanced serialized cursor. */
   saveCursor: (shop: string, raw: string) => Promise<void>;
 }
 
@@ -62,9 +62,10 @@ const noop = (cursor: string | null, extra: Partial<MeterOutcome> = {}): MeterOu
 });
 
 /**
- * Meter one batch for a shop. Idempotent on the stored cursor. Reports only for
+ * Meter one batch for a shop. Reports only for
  * an ACTIVE paid plan; a Free plan / no subscription counts nothing to Shopify.
- * Holds the cursor on any failure so no resolution is lost or double-billed.
+ * Holds the cursor on a refused batch/report. Concurrent delivery and durable
+ * retry after a successful report need a separate serialized delivery contract.
  */
 export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps()): Promise<MeterOutcome> {
   const billing = await deps.getBilling(shop);
@@ -75,7 +76,12 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
 
   const usage = await deps.readResolutions(tenantId, state.cursor);
   if (!usage) return noop(state.cursor, { error: "resolutions unreadable" });
-  const resolutions = Math.max(0, Math.floor(usage.resolutions ?? 0));
+  if (!Number.isSafeInteger(usage.resolutions) || usage.resolutions < 0 ||
+      typeof usage.cursor !== "string" || usage.cursor.trim().length === 0 ||
+      (usage.resolutions > 0 && usage.cursor === state.cursor)) {
+    return noop(state.cursor, { error: "invalid resolution batch — held" });
+  }
+  const resolutions = usage.resolutions;
   const plan = planFor(billing.plan);
 
   if (resolutions === 0) {
@@ -126,8 +132,8 @@ export function liveMeterDeps(): MeterDeps {
       // partner rollup tool takes tenant_id; a cursor/metric-aware arm is a
       // platform follow-up — until it lands, a missing count reads as null (held).
       const r = await callMcpTool<{ resolutions?: number; cursor?: string }>("get_tenant_usage", { tenant_id: tenantId });
-      if (!r.ok || !r.data || typeof r.data.resolutions !== "number" || !r.data.cursor) return null;
-      return { resolutions: r.data.resolutions, cursor: String(r.data.cursor) };
+      if (!r.ok || !r.data || typeof r.data.resolutions !== "number" || typeof r.data.cursor !== "string") return null;
+      return { resolutions: r.data.resolutions, cursor: r.data.cursor };
     },
     readBillingCycle: async (shop) => {
       const appGid = appGidFromEnv();

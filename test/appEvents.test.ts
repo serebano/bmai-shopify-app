@@ -101,3 +101,13 @@ describe("createAppEventsClient.reportUsage", () => {
     expect(mints).toBe(2);
   });
 });
+
+
+describe("billing event integer validation", () => {
+  it.each([NaN, Infinity, -1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects %s without any token or event request", async (units) => {
+    const fetchMock = vi.fn();
+    const client = createAppEventsClient({ env: ENV, fetch: fetchMock });
+    expect(await client.reportUsage({ shopId: "1", units, idempotencyKey: "k", timestamp: "t" })).toMatchObject({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

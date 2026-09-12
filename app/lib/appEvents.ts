@@ -99,8 +99,8 @@ export function createAppEventsClient(deps: AppEventsDeps = {}): AppEventsClient
       if (!cfg) {
         return { ok: false, error: `App Events credential missing (${APP_EVENTS_CLIENT_ID_ENV}/${APP_EVENTS_CLIENT_SECRET_ENV}) — usage not reported` };
       }
-      const units = Math.floor(input.units);
-      if (!Number.isFinite(units) || units <= 0) return { ok: false, error: "units must be a positive integer (Shopify rejects value=0)" };
+      const units = input.units;
+      if (!Number.isSafeInteger(units) || units <= 0) return { ok: false, error: "units must be a positive integer (Shopify rejects value=0)" };
       try {
         const bearer = await token(cfg);
         const res = await doFetch(APP_EVENTS_URL, {
