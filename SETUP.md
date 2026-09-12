@@ -342,7 +342,7 @@ and a redirect URL of **`/app/billing`** (the app reads `?plan_handle=` there).
 | `SHOPIFY_APP_ID` (numeric) or `SHOPIFY_APP_GID` | The app's GID for the Partner API query | host env |
 | `SHOPIFY_APP_EVENTS_CLIENT_ID` + `SHOPIFY_APP_EVENTS_CLIENT_SECRET` | Dev Dashboard API key → App Events API (usage billing events) | host env |
 | `BILLING_METER_SECRET` | Shared secret for the `POST /api/billing/meter` timer trigger | host env |
-| `STOREFRONT_ASSISTANT_EXTENSION_UUID` | Optional override of the Shopify-assigned theme-extension UUID used by the theme-editor deep link | host env |
+| `STOREFRONT_ASSISTANT_EXTENSION_UUID` | Optional override of the Shopify-assigned theme-extension CDN UUID used only for storefront asset detection (activation uses `SHOPIFY_API_KEY`) | host env |
 
 Metering trigger (systemd timer on the host; the secret is read from the env file, never argv):
 

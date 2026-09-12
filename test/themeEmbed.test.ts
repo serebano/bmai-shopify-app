@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   STOREFRONT_ASSISTANT_BLOCK,
   STOREFRONT_ASSISTANT_EXTENSION_UUID,
@@ -8,34 +8,32 @@ import {
   themeEditorAppEmbedsUrl,
 } from "../app/lib/themeEmbed";
 
-/**
- * Req 5.1.3 — onboarding for theme app extensions. The deep link must carry the
- * extension UUID SHOPIFY ASSIGNED (the `cdn.shopify.com/extensions/<uuid>/…` asset
- * path the storefront actually loads), NOT the toml `uid` — pinned here so a
- * refactor can't swap them and silently open a dead editor link.
- */
-const TOML_UID = "b439d562-1c1e-0ef2-eb3c-6acfad1dfbfe5bdd5d7c";
-
+/** Activation identity and CDN asset identity are separate Shopify contracts. */
 describe("theme editor deep link", () => {
-  it("pins the Shopify-assigned extension UUID (from the CDN asset path), not the toml uid", () => {
-    expect(STOREFRONT_ASSISTANT_EXTENSION_UUID).toBe("01a04ae4-bf97-7e8d-b8a4-a9c4cd3b4854");
-    expect(STOREFRONT_ASSISTANT_EXTENSION_UUID).not.toBe(TOML_UID);
-    expect(STOREFRONT_ASSISTANT_BLOCK).toBe("assistant"); // blocks/assistant.liquid
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("activates the block using the deployed app client ID, never the CDN UUID", () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "test-app-client-id");
+    vi.stubEnv("STOREFRONT_ASSISTANT_EXTENSION_UUID", "different-cdn-id");
+    const url = new URL(themeEditorActivateUrl("acme.myshopify.com"));
+    expect(url.origin).toBe("https://acme.myshopify.com");
+    expect(url.pathname).toBe("/admin/themes/current/editor");
+    expect(url.searchParams.get("context")).toBe("apps");
+    expect(url.searchParams.get("activateAppId")).toBe("test-app-client-id/assistant");
+    expect(url.href).not.toContain(STOREFRONT_ASSISTANT_EXTENSION_UUID);
+    expect(STOREFRONT_ASSISTANT_BLOCK).toBe("assistant");
   });
 
-  it("builds the activateAppId deep link for the shop", () => {
-    expect(themeEditorActivateUrl("acme.myshopify.com")).toBe(
-      "https://acme.myshopify.com/admin/themes/current/editor?context=apps&activateAppId=01a04ae4-bf97-7e8d-b8a4-a9c4cd3b4854/assistant",
-    );
-    expect(themeEditorAppEmbedsUrl("acme.myshopify.com")).toBe(
-      "https://acme.myshopify.com/admin/themes/current/editor?context=apps",
-    );
+  it("uses explicit app identity and safely encodes the block handle", () => {
+    const url = new URL(themeEditorActivateUrl("acme.myshopify.com", { apiKey: "another-client", block: "assistant&other" }));
+    expect(url.searchParams.get("activateAppId")).toBe("another-client/assistant&other");
+    expect(url.searchParams.has("other")).toBe(false);
   });
 
-  it("an env override replaces the UUID (a re-created extension gets a new one)", () => {
-    expect(themeEditorActivateUrl("acme.myshopify.com", { uuid: "ffffffff-0000-0000-0000-000000000000" })).toContain(
-      "activateAppId=ffffffff-0000-0000-0000-000000000000/assistant",
-    );
+  it("falls back to manual app embeds when app identity is unavailable", () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "  ");
+    expect(themeEditorActivateUrl("acme.myshopify.com")).toBe(themeEditorAppEmbedsUrl("acme.myshopify.com"));
+    expect(themeEditorAppEmbedsUrl("acme.myshopify.com")).toBe("https://acme.myshopify.com/admin/themes/current/editor?context=apps");
   });
 });
 
