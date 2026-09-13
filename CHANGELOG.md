@@ -4,6 +4,32 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-13 — 0.1.11: zero-usage display + quiet skip for a deprovisioned tenant (#19, devtools #2835)
+
+Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):
+
+- **Billing page showed "Resolution usage is currently unavailable" for a
+  ZERO-usage store.** `measuredCycleResolutions` required a truthy `cycleKey`
+  as a proxy for "a real measurement happened" — but `meterShop`'s
+  zero-resolution and Free-plan paths never populate `cycleKey` (that's its
+  OWN cycle-reset bookkeeping, unrelated to display trust). A fully-validated
+  `v:1` payload with a safe-integer `cycleResolutions` already proves the
+  count is real on its own. Dropped the redundant, buggy gate — a genuinely
+  observed zero now renders "0 of N included resolutions used" next to the
+  definition, never "unavailable". `test/usageDisplay.test.ts`.
+- **5 of 6 installed shops reported "resolutions unreadable" every hourly
+  meter run** — their `bmaiTenantId` had drifted stale (deprovisioned/archived
+  on the platform side); every read was refused
+  `tenant_management_denied`. That is a KNOWN, stable condition, not a
+  transient failure: the ledger now treats it as a quiet zero (never
+  "unreadable"/held) and flags the shop (`ShopTenant.tenantUnreachableAt`,
+  new migration `20260913130000_tenant_unreachable_flag`) so it logs ONCE on
+  the first denial and ONCE on recovery — never once per run. A genuinely
+  unexpected error still fails closed exactly as before.
+  `app/lib/resolutionLedger.server.ts`, `test/resolutionLedger.test.ts`.
+
+597 tests across 64 suites; typecheck, lint and production build green.
+
 ## 2026-09-13 — 0.1.10: single-flight token refresh (incident fix, #19, devtools #2835)
 
 - **Incident:** two concurrent MCP calls on a cold token cache each refreshed the
