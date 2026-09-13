@@ -107,6 +107,26 @@ model LaunchKey {
   createdAt  DateTime @default(now())
 }
 
+/// The AI-resolution ledger — ONE row per (tenant, conversation) ever counted as
+/// a billable resolution (#19/#2835). Idempotency boundary for the producer in
+/// app/lib/resolutionLedger.server.ts: a session id can be committed at most
+/// once per tenant (`@@unique`), so a re-scan of the same recent-conversations
+/// window never double-counts. Keyed by the bmai `tenantId` (not `shop`) because
+/// that is what `readResolutions(tenantId, cursor)` already carries — no shop
+/// lookup needed on the hot path. `occurredAt` = the conversation's
+/// `lastActiveAt` at the moment it qualified (the outbox evidence range), never
+/// processing time.
+model MeteredResolution {
+  id         String   @id @default(cuid())
+  tenantId   String
+  sessionId  String
+  occurredAt DateTime @db.Timestamptz
+  countedAt  DateTime @default(now()) @db.Timestamptz
+
+  @@unique([tenantId, sessionId])
+  @@index([tenantId, countedAt])
+}
+
 /// Unwired prepared-batch delivery core. accepted means ingestion, never billed.
 model MeterDelivery {
   id          String @id

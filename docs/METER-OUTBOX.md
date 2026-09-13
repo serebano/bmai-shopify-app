@@ -1,9 +1,19 @@
 # Prepared resolution delivery outbox
 
-Issue #27 is an **unwired foundation**. Production `meterShop` does not call this
-module. Its existing unavailable resolution read remains unavailable. This change
-does not define a resolution, implement the eligible ledger, change pricing or
-Free allowance behavior, send a Shopify request, or complete billing.
+> **WIRED as of #19 / devtools #2835 (2026-09-13).** This module is no longer an
+> unwired draft (PR #28 superseded — see `docs/BILLING.md` "Superseded: draft
+> PR #28"). `app/lib/usageBilling.ts` (`liveMeterDeps().reportUsage`) now
+> builds a `PreparedMeterBatch` from the real resolution producer
+> (`app/lib/resolutionLedger.server.ts`) and the live Partner API billing
+> cycle, and runs it through `prepare → claim → send → accept`. The caller
+> contract below, written for the original unwired draft, still describes the
+> core's own guarantees accurately — read `docs/BILLING.md` for how it is now
+> invoked end to end (definition → producer → outbox → App Events → dead-letter).
+
+Originally issue #27 shipped this as an **unwired foundation** (production
+`meterShop` did not call it; the resolution read was still unavailable; no
+Shopify request was ever sent). That historical framing below is kept for the
+core's own design record.
 
 ## Caller contract
 

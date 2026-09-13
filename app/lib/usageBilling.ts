@@ -1,10 +1,11 @@
 import prisma from "../db.server";
 import { adminForShop } from "../mcp/shopifyAdmin";
-import { callMcpTool } from "../bmai.server";
 import { PLANS, computeBillableUnits, planFor, type Plan } from "./plans";
 import { parseMeterCursor, serializeMeterCursor } from "./meterCursor";
 import { createAppEventsClient, usageIdempotencyKey } from "./appEvents";
 import { appGidFromEnv, fetchActiveSubscription } from "./partnerApi";
+import { commitCountedResolutions, liveResolutionLedgerDeps, readNewResolutions, type CountedSession } from "./resolutionLedger.server";
+import { createMeterOutbox, type PreparedMeterBatch } from "./meterOutbox";
 
 export { PLANS, planFor };
 export type { Plan };
@@ -35,10 +36,28 @@ export interface MeterDeps {
   getTenantId: (shop: string) => Promise<string | null>;
   /** New resolutions since the cursor (Busymate AI MCP read — no backdoor), or null when unreadable. */
   readResolutions: (tenantId: string, cursor: string | null) => Promise<{ resolutions: number; cursor: string } | null>;
-  /** The live billing cycle (Partner API) + the shop GID; null when there is no active cycle (trial / unreachable). */
-  readBillingCycle: (shop: string) => Promise<{ key: string; shopId: string } | null>;
-  /** Report billable units as an App Events billing event. */
-  reportUsage: (input: { shop: string; shopId: string; units: number; idempotencyKey: string }) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * The live billing cycle (Partner API) + the shop GID; null when there is no
+   * active cycle (trial / unreachable). `end` / `subscriptionId` are extra,
+   * OPTIONAL evidence for the outbox (cycle-bound occurrence range + a stable
+   * subscription identity for its staleness check).
+   */
+  readBillingCycle: (shop: string) => Promise<{ key: string; shopId: string; end?: string; subscriptionId?: string | null } | null>;
+  /**
+   * Report billable units as an App Events billing event. `beforeCursor` /
+   * `afterCursor` (the raw stored `BillingState.lastMeteredCursor` before/after
+   * this batch) are extra, OPTIONAL evidence a durable-delivery implementation
+   * (the outbox, app/lib/meterOutbox.ts) uses to detect a stale batch and to key
+   * a stable idempotency identity across retries — a test/mock deps may ignore them.
+   */
+  reportUsage: (input: {
+    shop: string;
+    shopId: string;
+    units: number;
+    idempotencyKey: string;
+    beforeCursor?: string | null;
+    afterCursor?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   /** Persist the advanced serialized cursor. */
   saveCursor: (shop: string, raw: string) => Promise<void>;
 }
@@ -105,7 +124,14 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
   const { units, capped } = computeBillableUnits({ plan, cycleResolutions, newResolutions: resolutions });
 
   if (units > 0) {
-    const rec = await deps.reportUsage({ shop, shopId: cycle.shopId, units, idempotencyKey: usageIdempotencyKey(shop, usage.cursor) });
+    const rec = await deps.reportUsage({
+      shop,
+      shopId: cycle.shopId,
+      units,
+      idempotencyKey: usageIdempotencyKey(shop, usage.cursor),
+      beforeCursor: billing.lastMeteredCursor ?? null,
+      afterCursor: serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + resolutions }),
+    });
     if (!rec.ok) {
       // Transient failure — hold the cursor so the batch is retried, not lost.
       return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error: rec.error };
@@ -115,12 +141,33 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
   return { metered: resolutions, reportedUnits: units, capped, cursor: usage.cursor };
 }
 
-/** Live production deps: Prisma + Busymate AI MCP + Partner API + App Events. */
+/**
+ * Live production deps: Prisma + Busymate AI MCP (the resolution ledger) +
+ * Partner API + the App Events client, delivered through the durable
+ * prepared-batch outbox (app/lib/meterOutbox.ts).
+ *
+ * `readResolutions` / `readBillingCycle` stash the evidence `reportUsage` needs
+ * to build a `PreparedMeterBatch` (tenant, occurrence range, cycle bounds) in
+ * closures private to THIS returned object. That is safe because `meterShop`
+ * builds a fresh `MeterDeps` per invocation (the `= liveMeterDeps()` default
+ * param) and always calls these methods in the same fixed sequence — see the
+ * `meterShop` body above. `saveCursor` is where a batch's sessions are finally
+ * committed to the idempotent `MeteredResolution` ledger (only paths that
+ * reach `saveCursor` are "done"; a held/failed batch is never committed, so it
+ * is safely re-derived — usually with the identical evidence — next run).
+ */
 export function liveMeterDeps(): MeterDeps {
   const events = createAppEventsClient();
+  const outbox = createMeterOutbox(prisma);
+  const ledgerDeps = liveResolutionLedgerDeps();
+  let pending: { tenantId: string; sessions: CountedSession[]; occurredFrom: string | null; occurredThrough: string | null; evidenceRef: string | null } | null = null;
+  let plan: string | null = null;
+  let cycleInfo: { start: string; end: string | null; subscriptionId: string | null } | null = null;
+
   return {
     getBilling: async (shop) => {
       const b = await prisma.billingState.findUnique({ where: { shop } });
+      plan = b?.plan ?? null;
       return b ? { status: b.status, plan: b.plan, lastMeteredCursor: b.lastMeteredCursor } : null;
     },
     getTenantId: async (shop) => {
@@ -128,12 +175,13 @@ export function liveMeterDeps(): MeterDeps {
       return t?.bmaiTenantId ?? null;
     },
     readResolutions: async (tenantId, _cursor) => {
-      // Resolution counts are a Busymate AI MCP read (never a backdoor). The
-      // partner rollup tool takes tenant_id; a cursor/metric-aware arm is a
-      // platform follow-up — until it lands, a missing count reads as null (held).
-      const r = await callMcpTool<{ resolutions?: number; cursor?: string }>("get_tenant_usage", { tenant_id: tenantId });
-      if (!r.ok || !r.data || typeof r.data.resolutions !== "number" || typeof r.data.cursor !== "string") return null;
-      return { resolutions: r.data.resolutions, cursor: r.data.cursor };
+      // The real producer (#19/#2835): conversation + hand-off MCP events run
+      // through the billable-resolution definition, never `get_tenant_usage`
+      // (that tool returns tenant entity counts, not resolutions/cursor).
+      const batch = await readNewResolutions(tenantId, ledgerDeps);
+      if (!batch) return null;
+      pending = { tenantId, sessions: batch.sessions, occurredFrom: batch.occurredFrom, occurredThrough: batch.occurredThrough, evidenceRef: batch.evidenceRef };
+      return { resolutions: batch.resolutions, cursor: batch.cursor };
     },
     readBillingCycle: async (shop) => {
       const appGid = appGidFromEnv();
@@ -145,14 +193,77 @@ export function liveMeterDeps(): MeterDeps {
       if (!shopId) return null;
       const sub = await fetchActiveSubscription({ appGid, shopGid: shopId });
       if (!sub.ok || !sub.subscription?.currentBillingCycle) return null;
-      return { key: sub.subscription.currentBillingCycle.startTime, shopId };
+      const { startTime, endTime } = sub.subscription.currentBillingCycle;
+      cycleInfo = { start: startTime, end: endTime ?? null, subscriptionId: sub.subscription.legacySubscriptionId ?? null };
+      return { key: startTime, shopId, end: endTime, subscriptionId: cycleInfo.subscriptionId };
     },
-    reportUsage: async ({ shopId, units, idempotencyKey }) =>
-      events.reportUsage({ shopId, units, idempotencyKey, timestamp: new Date().toISOString() }),
+    reportUsage: async ({ shop, shopId, units, idempotencyKey, beforeCursor, afterCursor }) => {
+      const sendDirect = () => events.reportUsage({ shopId, units, idempotencyKey, timestamp: new Date().toISOString() });
+      // Full evidence is only available on the live paid-plan path (readResolutions
+      // + readBillingCycle both ran and found something to report). Anything less
+      // ⇒ a direct call — still correct, just without the outbox's durability.
+      if (!pending || !cycleInfo || !plan || !afterCursor) return sendDirect();
+      try {
+        const nowIso = new Date().toISOString();
+        const start = Date.parse(cycleInfo.start);
+        const end = cycleInfo.end ? Date.parse(cycleInfo.end) : start + 31 * 24 * 60 * 60 * 1000;
+        // Clamp occurrence evidence into [cycleStart, cycleEnd): a conversation can
+        // qualify (cross the 24h reopen window) in a LATER cycle than it happened
+        // in — that is still honestly "reported in this cycle", not backdated.
+        const clamp = (iso: string | null) => new Date(Math.min(Math.max(Date.parse(iso ?? nowIso) || start, start), end - 1)).toISOString();
+        const batch: PreparedMeterBatch = {
+          shop,
+          tenantId: pending.tenantId,
+          shopId,
+          plan,
+          // App Pricing has no legacy AppSubscriptionLineItem id; the cycle start
+          // is this plan-period's stable identity (a plan/contract change rolls
+          // the cycle too — see docs/METER-OUTBOX.md "known limitation").
+          subscriptionId: cycleInfo.subscriptionId ?? cycleInfo.start,
+          beforeCursor: beforeCursor ?? null,
+          afterCursor,
+          units,
+          occurredFrom: clamp(pending.occurredFrom),
+          occurredThrough: clamp(pending.occurredThrough),
+          timestamp: nowIso,
+          cycleStart: cycleInfo.start,
+          cycleEnd: new Date(end).toISOString(),
+          evidenceRef: pending.evidenceRef ?? idempotencyKey,
+        };
+        const delivery = await outbox.prepare(batch);
+        const claimed = await outbox.claim(shop);
+        if (!claimed || claimed.id !== delivery.id) {
+          return { ok: false, error: "meter delivery claimed by a concurrent run — held for retry" };
+        }
+        const sent = await sendDirect();
+        if (!sent.ok) {
+          await outbox.release(claimed.id, claimed.leaseToken!);
+          return sent;
+        }
+        const accepted = await outbox.accept(claimed.id, claimed.leaseToken!);
+        if (accepted.state === "reconciliation") {
+          return { ok: false, error: "billing state changed mid-delivery — moved to reconciliation (dead-letter), needs manual review" };
+        }
+        return { ok: true };
+      } catch (err) {
+        // A stale/invalid prepared batch (snapshot drift, cross-cycle evidence)
+        // never blocks the widget — hold and retry, same as any other failure.
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
     saveCursor: async (shop, raw) => {
       await prisma.billingState.update({ where: { shop }, data: { lastMeteredCursor: raw } });
+      if (pending) {
+        await commitCountedResolutions(pending.tenantId, pending.sessions);
+        pending = null;
+      }
     },
   };
+}
+
+/** Reconciliation-state (dead-letter) meter deliveries for a shop — surfaced on the Billing page, never silently retried. */
+export async function listStuckDeliveries(shop: string): Promise<Array<{ id: string; createdAt: Date }>> {
+  return prisma.meterDelivery.findMany({ where: { shop, state: "reconciliation" }, select: { id: true, createdAt: true }, orderBy: { createdAt: "asc" } });
 }
 
 /**
