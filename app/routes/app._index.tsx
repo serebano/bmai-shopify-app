@@ -52,10 +52,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const access = resolveBillingAccess({ status: tenant?.billing?.status, plan: tenant?.billing?.plan, shop, appHandle: APP_HANDLE });
   // Scope-free embed detection from the public storefront (unknown on a
   // password-protected store — the written steps cover that case).
-  const embed = await detectStorefrontEmbed(shop);
   const provisionState = tenant?.provisionState ?? "pending";
-  const runtime = provisionState === "published" && tenant?.bmaiTenantId
-    ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
+  // Both reads are independent network round-trips (the public storefront and the
+  // Busymate AI integration record); run them concurrently so the Home loader —
+  // which every fetcher action revalidates — finishes in one round-trip, not two
+  // (#idle-500: a long revalidation is the window in which an abort lands).
+  const [embed, runtime] = await Promise.all([
+    detectStorefrontEmbed(shop),
+    provisionState === "published" && tenant?.bmaiTenantId
+      ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
+  ]);
   const live = runtime?.state === "ready";
   const steps = buildSetupChecklist({
     provisionState,

@@ -4,6 +4,19 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-13 — 0.1.8: layout-level in-frame recovery (review 2026-09-11, Req 2.1.1)
+
+- Reproduced live on the review store: a Home fetcher action followed by the layout
+  revalidation `GET /app.data` failing as `AbortError` (client-aborted) rendered the
+  root "500 Something went wrong" document inside the admin. The `/app` layout
+  boundary now hands only thrown Responses (session-token bounce, redirects, 4xx)
+  to the SDK's `boundary.error`; every other loader failure recovers in-frame with a
+  merchant-facing banner and a reload retry that re-enters the session-token bounce.
+- Home loader reads the storefront embed and the integration record concurrently
+  (one round-trip instead of two), shrinking the revalidation window.
+- A client-aborted request is logged as `route_aborted` (info), never counted as a
+  500. Tests: `test/layoutError.test.ts`.
+
 ## 2026-09-12 — 0.1.7: safe embedded-route diagnostics
 
 - Log allowlisted authentication/route failure metadata without queries, credentials,
