@@ -8,8 +8,11 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticate } from "../shopify.server";
 import { PolarisLink } from "../components/PolarisLink";
+import { AppRouteErrorView } from "../components/AppRouteError";
 import { EmbeddedNavigationContext } from "../components/EmbeddedNavigation";
+import { describeTransportError } from "../lib/clientAction";
 import { embeddedAppUrl, embeddedNavigationForShop } from "../lib/embeddedNavigation";
+import { isRouteControlFlow, reloadEmbeddedFrame } from "../lib/layoutError";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -44,8 +47,26 @@ export default function App() {
 }
 
 // Shopify needs Response headers on thrown boundaries to keep the app embedded.
+//
+// #idle-500 (app issue #29, Shopify review 2026-09-11 Req 2.1.1): the SDK's
+// `boundary.error` renders ONLY thrown Responses (the session-token bounce) and
+// re-throws everything else — so a transient failure of THIS layout's loader
+// revalidation (an aborted single-fetch, a dropped connection, an undecodable
+// body — all observed live as `AbortError` on `GET /app.data` right after a
+// fetcher action) escaped to the root boundary and replaced the whole embedded
+// document with the branded "500 Something went wrong" page. Non-control-flow
+// errors now recover IN-FRAME: the merchant sees a banner with "Try again", which
+// reloads the frame — a plain document reload re-enters the SDK's session-token
+// bounce, so no stale token is ever reused. Child routes already do the same via
+// `AppRouteBoundary`; this closes the layout-level gap.
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  const error = useRouteError();
+  if (isRouteControlFlow(error)) return boundary.error(error);
+  return (
+    <PolarisAppProvider i18n={enPolarisTranslations}>
+      <AppRouteErrorView message={describeTransportError(error)} onRetry={reloadEmbeddedFrame} />
+    </PolarisAppProvider>
+  );
 }
 
 export const headers: HeadersFunction = (args) => boundary.headers(args);

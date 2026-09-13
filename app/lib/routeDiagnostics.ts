@@ -1,6 +1,9 @@
 /** Diagnostics intentionally exclude message, stack, query, body, headers and identity. */
 export interface RouteDiagnostic {
-  event: "admin_auth_failed" | "route_failed";
+  /** `route_aborted`: the CLIENT closed the request before its loaders ran (React
+   *  Router throws the request's abort reason) — not an app failure, and never a
+   *  merchant-visible page, so it must not be counted as a 500 (#idle-500). */
+  event: "admin_auth_failed" | "route_failed" | "route_aborted";
   method: string;
   path: string;
   status: number;
@@ -22,7 +25,14 @@ export function routeDiagnostic(event: RouteDiagnostic["event"], request: Reques
   return { event, method: METHODS.has(request.method) ? request.method : "OTHER", path, status, errorClass, ...(errorCode ? { errorCode } : {}), aborted: request.signal.aborted };
 }
 export function reportRouteFailure(event: RouteDiagnostic["event"], request: Request, error: unknown): void {
-  try { console.error("[app-diagnostic]", JSON.stringify(routeDiagnostic(event, request, error))); } catch { /* Logging must never replace the original failure. */ }
+  try {
+    const diagnostic = routeDiagnostic(event, request, error);
+    if (event === "route_failed" && diagnostic.aborted) {
+      console.info("[app-diagnostic]", JSON.stringify({ ...diagnostic, event: "route_aborted" }));
+      return;
+    }
+    console.error("[app-diagnostic]", JSON.stringify(diagnostic));
+  } catch { /* Logging must never replace the original failure. */ }
 }
 export function observeAdminAuthentication<T>(
   admin: (request: Request) => Promise<T>,
