@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { evidenceRefFor, readNewResolutions, type ResolutionLedgerDeps } from "../app/lib/resolutionLedger.server";
 import type { ConversationRow, HandoffRow } from "../app/lib/tenantRead.server";
 
@@ -68,6 +68,32 @@ describe("readNewResolutions", () => {
   it("fails closed (null) when either MCP read is refused — never a fabricated zero", async () => {
     expect(await readNewResolutions("t_1", deps({ listConversations: async () => ({ ok: false, rows: [] }) }))).toBeNull();
     expect(await readNewResolutions("t_1", deps({ listHandoffs: async () => ({ ok: false, rows: [] }) }))).toBeNull();
+  });
+
+  // Incident 2026-09-13: the two MCP reads share ONE rotating refresh credential;
+  // issuing them concurrently on a cold cache raced the refresh grant and got the
+  // token family revoked. They must be SEQUENTIAL — handoffs only after
+  // conversations resolved, and never at all when conversations are unreadable.
+  it("reads conversations then handoffs SEQUENTIALLY (never concurrently)", async () => {
+    const order: string[] = [];
+    let releaseConv!: () => void;
+    const convGate = new Promise<void>((r) => { releaseConv = r; });
+    const d = deps({
+      listConversations: async () => { order.push("conv:start"); await convGate; order.push("conv:end"); return { ok: true, rows: [] }; },
+      listHandoffs: async () => { order.push("handoffs:start"); return { ok: true, rows: [] }; },
+    });
+    const run = readNewResolutions("t_1", d);
+    await Promise.resolve();
+    expect(order).toEqual(["conv:start"]); // handoffs NOT started while conversations is in flight
+    releaseConv();
+    await run;
+    expect(order).toEqual(["conv:start", "conv:end", "handoffs:start"]);
+  });
+
+  it("skips the handoffs read entirely when conversations are unreadable", async () => {
+    const listHandoffs = vi.fn(async () => ({ ok: true, rows: [] as HandoffRow[] }));
+    expect(await readNewResolutions("t_1", deps({ listConversations: async () => ({ ok: false, rows: [] }), listHandoffs }))).toBeNull();
+    expect(listHandoffs).not.toHaveBeenCalled();
   });
 
   it("zero billable conversations ⇒ resolutions 0, no sessions to commit", async () => {

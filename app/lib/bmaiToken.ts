@@ -52,8 +52,11 @@ export interface TokenProviderDeps {
 export interface TokenProvider {
   /** Return a valid OAuth access token, minting/refreshing as needed. */
   getAccessToken: () => Promise<string>;
-  /** Drop the cached access token (call on a 401 to force a re-mint). */
-  invalidate: () => void;
+  /**
+   * Drop the cached access token (call on a 401 to force a re-mint). Pass the
+   * token that was rejected so a fresher one minted meanwhile is kept.
+   */
+  invalidate: (staleToken?: string) => void;
 }
 
 export class BmaiCredentialError extends Error {}
@@ -119,18 +122,38 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
     return json.access_token;
   }
 
+  // SINGLE-FLIGHT refresh. The refresh token ROTATES on every grant and the edge
+  // treats a second POST of the same token as replay → it REVOKES THE WHOLE TOKEN
+  // FAMILY (incident 2026-09-13: two `Promise.all` MCP calls on a cold cache each
+  // refreshed independently and killed the shared "mgmt" credential app-wide).
+  // Every concurrent caller therefore awaits ONE shared in-flight promise; the
+  // grant is posted exactly once per cold/expired cache.
+  let inFlight: Promise<string> | null = null;
+
+  async function mint(): Promise<string> {
+    await ensureLoaded();
+    if (current) return refresh();
+    if (deps.staticToken) return deps.staticToken; // bootstrap/testing fallback
+    throw new BmaiCredentialError(
+      "no Busymate AI credential configured (refresh credential or bootstrap token required)",
+    );
+  }
+
   return {
-    invalidate() {
-      cached = null;
+    invalidate(staleToken?: string) {
+      // Token-aware: a caller that got a 401 on token T drops the cache only if T
+      // is STILL the cached token — never a fresher one another caller just minted
+      // (which would force a needless extra rotation).
+      if (staleToken === undefined || cached?.token === staleToken) cached = null;
     },
     async getAccessToken() {
       if (cached && cached.expMs - skewMs > now()) return cached.token;
-      await ensureLoaded();
-      if (current) return refresh();
-      if (deps.staticToken) return deps.staticToken; // bootstrap/testing fallback
-      throw new BmaiCredentialError(
-        "no Busymate AI credential configured (refresh credential or bootstrap token required)",
-      );
+      if (!inFlight) {
+        inFlight = mint().finally(() => {
+          inFlight = null;
+        });
+      }
+      return inFlight;
     },
   };
 }
