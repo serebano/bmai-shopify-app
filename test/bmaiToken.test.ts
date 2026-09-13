@@ -86,6 +86,64 @@ describe("bmai durable token provider", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  // Regression for the 2026-09-13 incident: two concurrent callers on a cold cache
+  // each posted the SAME refresh token; the edge read that as replay and revoked
+  // the whole token family. N concurrent callers must produce exactly ONE grant.
+  it("COALESCES concurrent refreshes: N cold-cache callers → exactly 1 refresh grant", async () => {
+    const store = memStore(null);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const fetchImpl = vi.fn(async () => { await gate; return tokenResponse("access-1", "refresh-2", 3600); });
+    const p = createTokenProvider({
+      mcpUrl: "https://busymate.ai/mcp", seedClientId: "cid", seedRefreshToken: "refresh-1",
+      store, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
+    });
+    const callers = Promise.all(Array.from({ length: 8 }, () => p.getAccessToken()));
+    await Promise.resolve(); // let every caller reach the (single) in-flight refresh
+    release();
+    const tokens = await callers;
+    expect(tokens).toEqual(Array(8).fill("access-1"));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(store.value).toEqual({ clientId: "cid", refreshToken: "refresh-2" });
+    // a later cold refresh uses the ROTATED token exactly once more
+    p.invalidate();
+    await Promise.all([p.getAccessToken(), p.getAccessToken()]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [, init2] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit];
+    expect(String(init2.body)).toContain("refresh_token=refresh-2");
+  });
+
+  it("a failed in-flight refresh rejects every waiter and clears the slot for a retry", async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async () => (++n === 1
+      ? ({ ok: false, status: 503, json: async () => ({ error: "temporarily_unavailable" }) } as unknown as Response)
+      : tokenResponse("access-ok", "refresh-2")));
+    const p = createTokenProvider({
+      mcpUrl: "https://busymate.ai/mcp", seedClientId: "cid", seedRefreshToken: "refresh-1",
+      fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
+    });
+    const results = await Promise.allSettled([p.getAccessToken(), p.getAccessToken(), p.getAccessToken()]);
+    expect(results.every((r) => r.status === "rejected" && r.reason instanceof BmaiCredentialError)).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(await p.getAccessToken()).toBe("access-ok");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidate(staleToken) keeps a FRESHER cached token another caller already minted", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => { calls++; return tokenResponse(`access-${calls}`, `refresh-${calls + 1}`); });
+    const p = createTokenProvider({
+      mcpUrl: "https://busymate.ai/mcp", seedClientId: "cid", seedRefreshToken: "refresh-1",
+      fetchImpl: fetchImpl as unknown as typeof fetch, now: () => 0,
+    });
+    const first = await p.getAccessToken(); // access-1
+    p.invalidate(first);
+    const second = await p.getAccessToken(); // access-2 (a legitimate re-mint)
+    p.invalidate(first); // a late 401 on the OLD token must NOT drop access-2
+    expect(await p.getAccessToken()).toBe(second);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("throws a clear re-authorize error when the refresh chain is revoked", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "invalid_grant", error_description: "refresh token already used (rotated) — chain revoked" }) }) as unknown as Response);
     const p = createTokenProvider({

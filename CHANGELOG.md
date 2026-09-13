@@ -4,6 +4,18 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-13 — 0.1.10: single-flight token refresh (incident fix, #19, devtools #2835)
+
+- **Incident:** two concurrent MCP calls on a cold token cache each refreshed the
+  shared `mgmt` OAuth credential; the edge read the second POST of the same
+  rotating refresh token as replay and revoked the token family — a latent
+  app-wide outage. Credential re-minted value-blind and the service restarted.
+- **Fix:** `app/lib/bmaiToken.ts` coalesces concurrent refreshes into ONE shared
+  in-flight grant and makes `invalidate(staleToken)` token-aware; the 401 retry in
+  `app/bmai.server.ts` reuses it; `app/lib/resolutionLedger.server.ts` reads
+  conversations then handoffs sequentially. Regression tests added. Full write-up:
+  `docs/BILLING.md` → "Incident 2026-09-13".
+
 ## 2026-09-13 — 0.1.9: the AI-resolution metering counter (#19, devtools #2835)
 
 - The last review gap: `usageBilling.ts` read `get_tenant_usage`, which returns

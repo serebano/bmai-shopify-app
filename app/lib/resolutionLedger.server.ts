@@ -73,8 +73,14 @@ export function evidenceRefFor(sessionIds: readonly string[]): string {
  * is refused.
  */
 export async function readNewResolutions(tenantId: string, deps: ResolutionLedgerDeps): Promise<ResolutionBatch | null> {
-  const [conv, handoffs] = await Promise.all([deps.listConversations(tenantId), deps.listHandoffs(tenantId)]);
-  if (!conv.ok || !handoffs.ok) return null;
+  // SEQUENTIAL on purpose (never `Promise.all`): both reads share ONE rotating
+  // refresh credential. The token provider now coalesces concurrent refreshes,
+  // but this runs hourly for every active shop on a possibly cold cache, so the
+  // belt-and-suspenders ordering stays — see docs/BILLING.md "Incident 2026-09-13".
+  const conv = await deps.listConversations(tenantId);
+  if (!conv.ok) return null;
+  const handoffs = await deps.listHandoffs(tenantId);
+  if (!handoffs.ok) return null;
 
   const now = (deps.now ?? (() => new Date()))();
   const decisions = decideResolutions(conv.rows, handoffs.rows, now);

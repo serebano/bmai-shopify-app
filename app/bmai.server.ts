@@ -115,7 +115,9 @@ export async function callMcpTool<T = unknown>(
   try {
     let res = await doFetch(token);
     if (res.status === 401) {
-      tokenProvider.invalidate();
+      // Retry ONCE after the (single-flight) refresh resolves; token-aware so a
+      // concurrent caller's fresher token is reused rather than rotated again.
+      tokenProvider.invalidate(token);
       token = await tokenProvider.getAccessToken();
       res = await doFetch(token);
     }

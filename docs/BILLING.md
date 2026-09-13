@@ -102,6 +102,47 @@ No new env vars. Reuses `SHOPIFY_APP_EVENTS_CLIENT_ID`/`_SECRET` (App Events),
 §11). Migration: `prisma/migrations/20260913090000_metered_resolution_ledger`
 (additive — `npx prisma migrate deploy`, same host runbook as SETUP.md §3b).
 
+## Incident 2026-09-13 — shared refresh credential revoked by a concurrent refresh
+
+**What happened.** During live verification of 0.1.9 a one-off script issued the
+two producer reads (`list_tenant_conversations` + `list_tenant_interventions`) via
+`Promise.all` through the app's shared `mgmt` credential on a cold token cache.
+`createTokenProvider.getAccessToken()` had no request coalescing, so both calls
+POSTed the SAME rotating refresh token to `/token` at once; the edge treated the
+second as replay outside its 60 s grace window and **revoked the whole token
+family** (`400 invalid_grant`). The credential is shared by every bmai operation
+of every shop, so the live app kept working only on its cached 1 h access token
+and started failing app-wide (`BmaiCredentialError`) once that expired.
+`readNewResolutions` used the identical `Promise.all` pattern, so the hourly
+meter run would have re-triggered it on the first cold cache after any restart.
+
+**Recovery (done 2026-09-13 ~10:34 EEST).** Re-minted the credential value-blind
+with `scripts/mint-provision-credential.mjs` against the EXISTING provisioner
+identity, installed `BMAI_MGMT_*` on the host env via stdin, dropped the stale
+`BmaiCredential` `mgmt` row (the store wins over the seed, so a stale row would
+have kept the revoked family), proved with ONE sequential read per tool, then
+restarted the service.
+
+**Fix (0.1.10).**
+- `app/lib/bmaiToken.ts`: **single-flight refresh** — every concurrent caller on a
+  cold/expired cache awaits ONE shared in-flight promise; the grant is posted
+  exactly once. `invalidate(staleToken)` is token-aware, so a late 401 on an old
+  token never drops a fresher token another caller just minted.
+- `app/bmai.server.ts`: the retry-once-on-401 passes the rejected token to
+  `invalidate` and waits for the coalesced refresh.
+- `app/lib/resolutionLedger.server.ts`: the two reads are **sequential** (belt and
+  suspenders on top of the coalescing) and handoffs are skipped when
+  conversations are unreadable.
+- Tests: `test/bmaiToken.test.ts` (8 concurrent callers → 1 grant; failed
+  in-flight refresh rejects all + clears the slot; token-aware invalidate) and
+  `test/resolutionLedger.test.ts` (ordering + skip).
+
+**Rule.** Never run two MCP calls concurrently through a freshly-started process
+from an ad-hoc script that shares the app's credential; one process = one
+refresh chain. Any host-side verification script uses ONE call at a time and is
+followed by a service restart (so the running app loads the rotated token from
+the store).
+
 ## Tests
 
 - `test/resolutionDefinition.test.ts` — the definition itself (pure).
