@@ -4,6 +4,34 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-13 — 0.1.9: the AI-resolution metering counter (#19, devtools #2835)
+
+- The last review gap: `usageBilling.ts` read `get_tenant_usage`, which returns
+  tenant entity counts, not a resolutions/cursor pair — usage was permanently
+  unreadable. Replaced with a real producer (`app/lib/resolutionLedger.server.ts`)
+  reading `list_tenant_conversations` + `list_tenant_interventions` (all
+  statuses) and applying the boss-default definition (`app/lib/
+  resolutionDefinition.ts`, `docs/BILLING.md`): **a billable AI resolution is a
+  visitor conversation the assistant answered that ended without a human
+  hand-off, and was not reopened by the same visitor within 24 hours.**
+- New idempotent ledger `MeteredResolution` (`@@unique([tenantId, sessionId])`)
+  — a conversation is counted at most once, ever, however many times the
+  rolling recent-conversations window re-surfaces it.
+- Wired the previously-unwired prepared-batch outbox (PR #28 / issue #27,
+  `app/lib/meterOutbox.ts`, cherry-picked verbatim) into `meterShop`: a
+  billable batch is `prepare`d, `claim`ed (30s DB-clock lease), sent to
+  Shopify App Events, then `accept`ed — durable against overlapping
+  timer/page-load metering and an API-success/DB-failure retry. A delivery
+  whose billing snapshot changed mid-flight moves to `reconciliation`
+  (dead-letter) and is surfaced as a critical Billing-page banner, never
+  silently retried. Supersedes PR #28 — see `docs/BILLING.md`.
+- Billing page shows the definition text next to the current-cycle count.
+- New migration `20260913090000_metered_resolution_ledger` (additive).
+- Tests: `test/resolutionDefinition.test.ts`, `test/resolutionLedger.test.ts`
+  (new, 17 tests) + `test/meterOutbox.test.ts` (19, cherry-picked). 584 tests
+  across 64 suites; typecheck, lint, production build all green;
+  `meterShop`'s existing tested allowance/cap logic is unchanged.
+
 ## 2026-09-13 — 0.1.8: layout-level in-frame recovery (review 2026-09-11, Req 2.1.1)
 
 - Reproduced live on the review store: a Home fetcher action followed by the layout

@@ -22,8 +22,9 @@ import { managedPricingUrl, resolveBillingAccess } from "../lib/billingGate";
 import { subscriptionStateFromInstallation, subscriptionStateFromPlanHandle } from "../lib/billingSync";
 import { readBillingState, syncBillingState } from "../lib/billingState.server";
 import { appGidFromEnv, fetchActiveSubscription, subscriptionStateFromPartnerApi } from "../lib/partnerApi";
-import { meterShop } from "../lib/usageBilling";
+import { listStuckDeliveries, meterShop } from "../lib/usageBilling";
 import { measuredCycleResolutions } from "../lib/usageDisplay";
+import { RESOLUTION_DEFINITION } from "../lib/resolutionDefinition";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
@@ -104,6 +105,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const billing = await readBillingState(session.shop);
   const access = resolveBillingAccess({ status: billing?.status, plan: billing?.plan, shop: session.shop, appHandle: APP_HANDLE });
   const plan = planFor(access.planId);
+  // Dead-letter visibility (#19/#2835): a delivery the outbox moved to
+  // "reconciliation" needs a human, not a silent auto-retry — surfaced here,
+  // never hidden. See app/lib/meterOutbox.ts + docs/METER-OUTBOX.md.
+  const stuckDeliveries = await listStuckDeliveries(session.shop).catch(() => []);
   return {
     plans: PLANS.map((p) => ({ id: p.id, name: p.name, blurb: describePlan(p), current: p.id === access.planId })),
     planId: access.planId,
@@ -125,6 +130,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       capped: meter.capped,
       meterError: meter.error ?? null,
     },
+    stuckDeliveryCount: stuckDeliveries.length,
   };
 };
 
@@ -165,6 +171,15 @@ export default function BillingPage() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {data.stuckDeliveryCount > 0 ? (
+              <Banner tone="critical" title="A billing delivery needs review">
+                <p>
+                  {data.stuckDeliveryCount === 1 ? "One usage report" : `${data.stuckDeliveryCount} usage reports`} could not be
+                  reconciled automatically after your plan or billing state changed mid-delivery. It is not being retried
+                  silently — contact support so we can resolve it by hand.
+                </p>
+              </Banner>
+            ) : null}
             {data.tone === "warning" ? (
               <Banner tone="warning" title="Billing needs attention" action={{ content: "Resolve billing", onAction: openPricing }}>
                 <p>{data.reason}. Your storefront assistant keeps working while you sort it out.</p>
@@ -216,6 +231,9 @@ export default function BillingPage() {
                     : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
                   {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
                   {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}.
+                </Text>
+                <Text as="p" tone="subdued">
+                  {RESOLUTION_DEFINITION}
                 </Text>
                 <InlineStack gap="300">
                   <Button variant="primary" onClick={openPricing}>

@@ -97,6 +97,23 @@ export async function listTenantHandoffs(
   return { ok: true, rows: handoffRows(r.data) };
 }
 
+/**
+ * ALL handoffs (no status filter), any lifecycle — used by the resolution meter
+ * (app/lib/resolutionLedger.server.ts): a conversation that ever had a human
+ * intervention requested (open, resolved, or declined) is disqualified from the
+ * "no hand-off" billable-resolution definition, not just a currently-open one.
+ * Distinct from `listTenantHandoffs` (open-only, the Conversations-page inbox).
+ */
+export async function listTenantInterventionsAll(
+  tenantId: string | null | undefined,
+  call: McpCall = callMcpTool,
+): Promise<ListResult<HandoffRow>> {
+  if (!tenantId) return { ok: false, rows: [], error: NOT_PROVISIONED };
+  const r = await call("list_tenant_interventions", { tenant_id: tenantId });
+  if (!r.ok) return { ok: false, rows: [], error: `list_tenant_interventions: ${r.error ?? "refused"}` };
+  return { ok: true, rows: handoffRows(r.data) };
+}
+
 export type BrandingRead =
   | { ok: true; assistantName: string | null; productName: string | null }
   | { ok: false; error: string };
