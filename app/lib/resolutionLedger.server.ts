@@ -52,11 +52,30 @@ export interface ResolutionBatch {
 }
 
 export interface ResolutionLedgerDeps {
-  listConversations: (tenantId: string) => Promise<{ ok: boolean; rows: ConversationRow[] }>;
-  listHandoffs: (tenantId: string) => Promise<{ ok: boolean; rows: HandoffRow[] }>;
+  listConversations: (tenantId: string) => Promise<{ ok: boolean; rows: ConversationRow[]; error?: string }>;
+  listHandoffs: (tenantId: string) => Promise<{ ok: boolean; rows: HandoffRow[]; error?: string }>;
   alreadyCounted: (tenantId: string, sessionIds: string[]) => Promise<Set<string>>;
+  /**
+   * Edge-triggered "this tenant is unreachable" bookkeeping. `unreachable`
+   * reflects THIS run's read; returns whether that is a CHANGE from the
+   * stored state (so the caller logs once per transition, not once per run).
+   */
+  markTenantReachability: (tenantId: string, unreachable: boolean) => Promise<{ changed: boolean }>;
   now?: () => Date;
 }
+
+/**
+ * The platform's authorization-denial signal for a tenant this app's stored
+ * provisioner identity is no longer admin-of — in practice, a deprovisioned or
+ * archived tenant whose local `ShopTenant.bmaiTenantId` has drifted stale.
+ * Distinct from a genuinely transient/unexpected error, which must still fail
+ * closed (never silently treated as "nothing to meter").
+ */
+export function isTenantManagementDenied(error: string | undefined): boolean {
+  return typeof error === "string" && error.includes("tenant_management_denied");
+}
+
+const EMPTY_BATCH: ResolutionBatch = { resolutions: 0, cursor: evidenceRefFor([]), occurredFrom: null, occurredThrough: null, evidenceRef: null, sessions: [] };
 
 /** How many recent conversations to scan per tenant per run — generous over the hourly timer cadence. */
 export const CONVERSATION_SCAN_LIMIT = 200;
@@ -78,9 +97,13 @@ export async function readNewResolutions(tenantId: string, deps: ResolutionLedge
   // but this runs hourly for every active shop on a possibly cold cache, so the
   // belt-and-suspenders ordering stays — see docs/BILLING.md "Incident 2026-09-13".
   const conv = await deps.listConversations(tenantId);
-  if (!conv.ok) return null;
+  if (!conv.ok) return handleUnreadable(tenantId, conv.error, deps);
   const handoffs = await deps.listHandoffs(tenantId);
-  if (!handoffs.ok) return null;
+  if (!handoffs.ok) return handleUnreadable(tenantId, handoffs.error, deps);
+
+  // Both reads succeeded: a tenant previously marked unreachable has recovered.
+  const recovered = await deps.markTenantReachability(tenantId, false);
+  if (recovered.changed) console.log(`[billing] tenant ${tenantId} resolution reads recovered — reachability restored`);
 
   const now = (deps.now ?? (() => new Date()))();
   const decisions = decideResolutions(conv.rows, handoffs.rows, now);
@@ -103,6 +126,19 @@ export async function readNewResolutions(tenantId: string, deps: ResolutionLedge
     evidenceRef: ref,
     sessions: fresh,
   };
+}
+
+/**
+ * A refused MCP read: `tenant_management_denied` is a QUIET SKIP (an expected,
+ * stable condition for a deprovisioned tenant — a real zero, logged once per
+ * transition, never per run); anything else FAILS CLOSED (null — "unreadable",
+ * held, retried next run, never guessed as zero).
+ */
+async function handleUnreadable(tenantId: string, error: string | undefined, deps: ResolutionLedgerDeps): Promise<ResolutionBatch | null> {
+  if (!isTenantManagementDenied(error)) return null;
+  const marked = await deps.markTenantReachability(tenantId, true);
+  if (marked.changed) console.warn(`[billing] tenant ${tenantId} resolution reads denied (tenant_management_denied) — treating as a quiet zero until it recovers`);
+  return EMPTY_BATCH;
 }
 
 /**
@@ -129,6 +165,17 @@ export function liveResolutionLedgerDeps(call: McpCall = callMcpTool): Resolutio
       if (sessionIds.length === 0) return new Set();
       const rows = await prisma.meteredResolution.findMany({ where: { tenantId, sessionId: { in: sessionIds } }, select: { sessionId: true } });
       return new Set(rows.map((r) => r.sessionId));
+    },
+    markTenantReachability: async (tenantId, unreachable) => {
+      // `updateMany` (not `update`): bmaiTenantId is not a unique key on
+      // ShopTenant, and this must never throw for a tenantId that matches zero
+      // or more than one row — it is bookkeeping, not the source of truth.
+      const row = await prisma.shopTenant.findFirst({ where: { bmaiTenantId: tenantId }, select: { shop: true, tenantUnreachableAt: true } });
+      if (!row) return { changed: false }; // no local shop row for this tenant — nothing to flag
+      const wasUnreachable = row.tenantUnreachableAt !== null;
+      if (wasUnreachable === unreachable) return { changed: false };
+      await prisma.shopTenant.update({ where: { shop: row.shop }, data: { tenantUnreachableAt: unreachable ? new Date() : null } });
+      return { changed: true };
     },
   };
 }

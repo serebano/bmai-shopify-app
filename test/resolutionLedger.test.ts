@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { evidenceRefFor, readNewResolutions, type ResolutionLedgerDeps } from "../app/lib/resolutionLedger.server";
+import { evidenceRefFor, isTenantManagementDenied, readNewResolutions, type ResolutionLedgerDeps } from "../app/lib/resolutionLedger.server";
 import type { ConversationRow, HandoffRow } from "../app/lib/tenantRead.server";
 
 /**
@@ -22,6 +22,7 @@ function deps(over: Partial<ResolutionLedgerDeps> & { alreadyCountedIds?: string
     listConversations: over.listConversations ?? (async () => ({ ok: true, rows: [] })),
     listHandoffs: over.listHandoffs ?? (async () => ({ ok: true, rows: [] })),
     alreadyCounted: over.alreadyCounted ?? (async (_tenantId, ids) => new Set(ids.filter((id) => already.has(id)))),
+    markTenantReachability: over.markTenantReachability ?? (async () => ({ changed: false })),
     now: over.now ?? (() => NOW),
   };
 }
@@ -65,9 +66,71 @@ describe("readNewResolutions", () => {
     expect(first?.cursor).toBe(evidenceRefFor(["s1"]));
   });
 
-  it("fails closed (null) when either MCP read is refused — never a fabricated zero", async () => {
-    expect(await readNewResolutions("t_1", deps({ listConversations: async () => ({ ok: false, rows: [] }) }))).toBeNull();
-    expect(await readNewResolutions("t_1", deps({ listHandoffs: async () => ({ ok: false, rows: [] }) }))).toBeNull();
+  it("fails closed (null) when either MCP read is refused for an UNKNOWN reason — never a fabricated zero", async () => {
+    expect(await readNewResolutions("t_1", deps({ listConversations: async () => ({ ok: false, rows: [], error: "network timeout" } as never) }))).toBeNull();
+    expect(await readNewResolutions("t_1", deps({ listHandoffs: async () => ({ ok: false, rows: [], error: "500" } as never) }))).toBeNull();
+  });
+
+  // #19/#2835 — a deprovisioned/archived tenant is a KNOWN, stable condition
+  // (the platform denies this app's stored admin identity on that tenant),
+  // never a transient error: quiet zero, not "unreadable", and logged only on
+  // the FIRST transition — not every hourly run.
+  describe("deprovisioned tenant (tenant_management_denied) — quiet skip", () => {
+    it("returns a quiet zero batch, never null/'unreadable'", async () => {
+      const out = await readNewResolutions(
+        "t_1",
+        deps({ listConversations: async () => ({ ok: false, rows: [], error: "list_tenant_conversations: list_support_conversations refused: tenant_management_denied" } as never) }),
+      );
+      expect(out).toEqual({ resolutions: 0, cursor: evidenceRefFor([]), occurredFrom: null, occurredThrough: null, evidenceRef: null, sessions: [] });
+    });
+
+    it("marks the tenant unreachable (true) exactly once — the handoffs read is never attempted", async () => {
+      const listHandoffs = vi.fn(async () => ({ ok: true, rows: [] as HandoffRow[] }));
+      const markTenantReachability = vi.fn(async () => ({ changed: true }));
+      await readNewResolutions(
+        "t_1",
+        deps({ listConversations: async () => ({ ok: false, rows: [], error: "tenant_management_denied" } as never), listHandoffs, markTenantReachability }),
+      );
+      expect(markTenantReachability).toHaveBeenCalledWith("t_1", true);
+      expect(listHandoffs).not.toHaveBeenCalled();
+    });
+
+    it("a SECOND consecutive denial is still a quiet zero, but marks nothing NEW (changed:false) — the caller logs only on the transition", async () => {
+      const markTenantReachability = vi.fn(async () => ({ changed: false })); // already marked unreachable from a prior run
+      const out = await readNewResolutions(
+        "t_1",
+        deps({ listConversations: async () => ({ ok: false, rows: [], error: "tenant_management_denied" } as never), markTenantReachability }),
+      );
+      expect(out?.resolutions).toBe(0);
+      expect(markTenantReachability).toHaveBeenCalledWith("t_1", true);
+    });
+
+    it("a successful read after a denial clears reachability (false)", async () => {
+      const markTenantReachability = vi.fn(async () => ({ changed: true }));
+      await readNewResolutions("t_1", deps({ markTenantReachability }));
+      expect(markTenantReachability).toHaveBeenCalledWith("t_1", false);
+    });
+
+    it("handoffs denied (conversations fine) is ALSO a quiet skip, not a partial/fabricated count", async () => {
+      const out = await readNewResolutions(
+        "t_1",
+        deps({
+          listConversations: async () => ({ ok: true, rows: [conv("s1", hoursAgo(30))] }),
+          listHandoffs: async () => ({ ok: false, rows: [], error: "tenant_management_denied" } as never),
+        }),
+      );
+      expect(out).toMatchObject({ resolutions: 0, sessions: [] });
+    });
+  });
+
+  describe("isTenantManagementDenied", () => {
+    it("matches the exact live MCP denial substring", () => {
+      expect(isTenantManagementDenied("list_tenant_conversations: list_support_conversations refused: tenant_management_denied")).toBe(true);
+    });
+    it("does not match an unrelated error or undefined", () => {
+      expect(isTenantManagementDenied("network timeout")).toBe(false);
+      expect(isTenantManagementDenied(undefined)).toBe(false);
+    });
   });
 
   // Incident 2026-09-13: the two MCP reads share ONE rotating refresh credential;

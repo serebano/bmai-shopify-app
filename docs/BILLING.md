@@ -94,6 +94,30 @@ plan-handle mismatch inside `matches()` still catches the common case). Explicit
 handling of a same-cycle plan change is a follow-up if it proves to matter in
 practice.
 
+## Zero usage and a deprovisioned tenant (0.1.11)
+
+Verifying live on the review store surfaced two more bugs, both fixed in 0.1.11:
+
+- **A zero-usage store must render "0 resolutions this cycle", never
+  "unavailable".** `app/lib/usageDisplay.ts`'s `measuredCycleResolutions` used
+  to require a truthy `cycleKey` in the stored cursor as a proxy for "this was
+  really measured" — but `meterShop`'s zero-resolution and Free-plan branches
+  never populate `cycleKey` (it is meterShop's own per-cycle-reset bookkeeping,
+  not a display-trust signal). A `v:1` payload whose `cycleResolutions` is
+  already a validated safe non-negative integer IS the proof; the extra gate
+  was dropped.
+- **A deprovisioned/archived tenant is a quiet zero, not "unreadable".**
+  `list_tenant_conversations` / `list_tenant_interventions` refuse with
+  `tenant_management_denied` when this app's stored provisioner identity is no
+  longer admin-of a tenant (the platform-side tenant was archived/deleted while
+  the local `ShopTenant.bmaiTenantId` kept pointing at it). That is a known,
+  stable condition — `resolutionLedger.server.ts` now treats it as a real
+  zero (never held/"unreadable") and records it on `ShopTenant.tenantUnreachableAt`
+  (migration `20260913130000_tenant_unreachable_flag`), logging ONCE on the
+  first denial and once on recovery — never once per hourly run. Any OTHER
+  refusal reason still fails closed exactly as before (held, retried, never
+  guessed as zero).
+
 ## Env / ops
 
 No new env vars. Reuses `SHOPIFY_APP_EVENTS_CLIENT_ID`/`_SECRET` (App Events),

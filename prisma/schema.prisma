@@ -49,6 +49,14 @@ model ShopTenant {
   /// A published tenant whose registered order tools / customer sign-in are NOT in
   /// the published revision (#2132) — surfaced on Home + Store connection.
   provisionWarning String?
+  /// Set when the resolution meter's MCP reads (list_tenant_conversations /
+  /// list_tenant_interventions) are refused with tenant_management_denied —
+  /// this shop's `bmaiTenantId` no longer resolves to a live, admin-authorized
+  /// tenant (deprovisioned/archived on the platform side, drifted from this
+  /// row's stale provisionState). Edge-triggered: set/logged ONCE on the first
+  /// denial, cleared/logged once on recovery — never re-logged every hourly
+  /// meter run (#19/#2835). See app/lib/resolutionLedger.server.ts.
+  tenantUnreachableAt DateTime?
   customDomain   String?  // storefront custom domain, added to the embed-origin allowlist
   publishedAt    DateTime?
   /// Training state (#2110 grounding): what the assistant was last trained on via
